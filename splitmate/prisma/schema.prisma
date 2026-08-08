@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum SplitMethod {
+  EQUAL
+  WEIGHTED
+  EXACT
+}
+
+model User {
+  id              String        @id @default(cuid())
+  displayName     String
+  email           String?       @unique
+  phone           String?       @unique
+  ownedGroups     Group[]       @relation("GroupOwner")
+  memberships     GroupMember[]
+  createdExpenses Expense[]     @relation("ExpenseCreator")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model Group {
+  id          String        @id @default(cuid())
+  name        String
+  ownerId     String
+  owner       User          @relation("GroupOwner", fields: [ownerId], references: [id])
+  members     GroupMember[]
+  expenses    Expense[]
+  settlements Settlement[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model GroupMember {
+  id                  String         @id @default(cuid())
+  groupId             String
+  userId              String?
+  displayName         String
+  group               Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user                User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  paidExpenses        Expense[]      @relation("ExpensePayer")
+  expenseShares       ExpenseShare[]
+  sentSettlements     Settlement[]   @relation("SettlementFrom")
+  receivedSettlements Settlement[]   @relation("SettlementTo")
+  createdAt           DateTime       @default(now())
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+}
+
+model Expense {
+  id          String         @id @default(cuid())
+  groupId     String
+  description String
+  amountCents Int
+  paidBy      String
+  createdById String
+  date        DateTime
+  splitMethod SplitMethod
+  category    String?
+  settled     Boolean        @default(false)
+  tripId      String?
+  location    String?
+  photoUrls   String?
+  group       Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  payer       GroupMember    @relation("ExpensePayer", fields: [paidBy], references: [id])
+  createdBy   User           @relation("ExpenseCreator", fields: [createdById], references: [id])
+  shares      ExpenseShare[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([groupId, date])
+  @@index([paidBy])
+  @@index([createdById])
+}
+
+model ExpenseShare {
+  id          String      @id @default(cuid())
+  expenseId   String
+  memberId    String
+  amountCents Int
+  expense     Expense     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  member      GroupMember @relation(fields: [memberId], references: [id])
+
+  @@unique([expenseId, memberId])
+  @@index([memberId])
+}
+
+model Settlement {
+  id           String      @id @default(cuid())
+  groupId      String
+  fromMemberId String
+  toMemberId   String
+  amountCents  Int
+  confirmedAt  DateTime    @default(now())
+  group        Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  fromMember   GroupMember @relation("SettlementFrom", fields: [fromMemberId], references: [id])
+  toMember     GroupMember @relation("SettlementTo", fields: [toMemberId], references: [id])
+
+  @@index([groupId, confirmedAt])
+  @@index([fromMemberId])
+  @@index([toMemberId])
+}
