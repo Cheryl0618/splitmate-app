@@ -2,6 +2,9 @@
   "name": "splitmate",
   "version": "0.1.0",
   "private": true,
+  "prisma": {
+    "seed": "node --env-file=.env --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON prisma/seed.ts"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
