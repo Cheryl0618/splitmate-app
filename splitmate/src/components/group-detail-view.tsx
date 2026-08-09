@@ -87,7 +87,15 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
               </h2>
               <p className="mt-1 text-sm text-slate-500">正数代表应收，负数代表应付</p>
             </div>
-            <span className="text-sm text-slate-400">{group.members.length} 人</span>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-400">{group.members.length} 人</span>
+              <Link
+                href={`/groups/${group.id}/settle`}
+                className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold text-teal-700 hover:bg-teal-100"
+              >
+                去结算
+              </Link>
+            </div>
           </div>
 
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
