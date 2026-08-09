@@ -6,7 +6,7 @@ import {
   type SplitMethod,
   type SplitParticipant,
 } from "@/lib/split";
-import { openWritableDatabase } from "@/server/database";
+import { openDatabase, openWritableDatabase } from "@/server/database";
 
 export class ExpenseMutationError extends Error {
   constructor(
@@ -82,7 +82,10 @@ function validateInput(value: unknown) {
     throw new ExpenseMutationError("账单日期格式不正确", 400);
   }
   const date = Date.parse(`${input.date}T12:00:00.000Z`);
-  if (Number.isNaN(date)) {
+  if (
+    Number.isNaN(date) ||
+    new Date(date).toISOString().slice(0, 10) !== input.date
+  ) {
     throw new ExpenseMutationError("账单日期无效", 400);
   }
 
@@ -115,7 +118,7 @@ function validateMembers(
     throw new ExpenseMutationError("参与人不属于这个群组", 400);
   }
 
-  const database = openWritableDatabase();
+  const database = openDatabase();
   try {
     const membership = database
       .prepare(
@@ -140,7 +143,7 @@ export function createExpense(
   }
 
   const { input, shares, date } = validateInput(value);
-  const database = openWritableDatabase();
+  const database = openDatabase();
   const memberRows = database
     .prepare(`SELECT id FROM "GroupMember" WHERE groupId = ?`)
     .all(groupId) as MemberIdRow[];
@@ -198,7 +201,7 @@ export function updateExpense(
   }
 
   const { input, shares, date } = validateInput(value);
-  const database = openWritableDatabase();
+  const database = openDatabase();
   const expense = database
     .prepare(`SELECT id, groupId, createdById FROM "Expense" WHERE id = ?`)
     .get(expenseId) as ExpenseOwnerRow | undefined;

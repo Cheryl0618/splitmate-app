@@ -28,6 +28,9 @@ export function calculateShares(
   participants: SplitParticipant[]
 ): Record<string, number> {
   validateCommon(totalCents, participants);
+  if (method !== "equal" && method !== "percentage" && method !== "amount") {
+    throw new Error("unknown split method");
+  }
 
   if (method === "amount") {
     const amounts = participants.map((participant) => participant.amountCents);
