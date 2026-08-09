@@ -67,6 +67,12 @@ function parseInput(value: unknown): ExpenseInput {
     paidBy: typeof input.paidBy === "string" ? input.paidBy : "",
     method: method as SplitMethod,
     participants,
+    photoUrls: Array.isArray(input.photoUrls)
+      ? input.photoUrls.filter(
+          (photoUrl): photoUrl is string =>
+            typeof photoUrl === "string" && photoUrl.startsWith("data:image/")
+        )
+      : undefined,
   };
 }
 
@@ -160,7 +166,7 @@ export function createExpense(
         `INSERT INTO "Expense" (
           id, groupId, description, amountCents, paidBy, createdById, date,
           splitMethod, category, settled, tripId, location, photoUrls, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, NULL, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, ?, ?, ?)`
       )
       .run(
         expenseId,
@@ -171,6 +177,7 @@ export function createExpense(
         currentUserId,
         date,
         splitMethodForDatabase(input.method),
+        input.photoUrls?.length ? JSON.stringify(input.photoUrls) : null,
         now,
         now
       );

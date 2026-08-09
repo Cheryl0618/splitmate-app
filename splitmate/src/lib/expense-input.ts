@@ -7,4 +7,5 @@ export interface ExpenseInput {
   paidBy: string;
   method: SplitMethod;
   participants: SplitParticipant[];
+  photoUrls?: string[];
 }
