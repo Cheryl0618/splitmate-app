@@ -1,6 +1,9 @@
 "use client";
 
+import Link from "next/link";
+
 import { useCurrentUser } from "@/lib/current-user";
+import { formatCents } from "@/lib/format";
 import type { DemoUserSummary, GroupCardData } from "@/server/groups";
 import { UserSwitcher } from "./user-switcher";
 
@@ -12,27 +15,18 @@ const avatarColors = [
   "bg-rose-100 text-rose-800",
 ];
 
-function formatCurrency(amountCents: number) {
-  return new Intl.NumberFormat("zh-CN", {
-    style: "currency",
-    currency: "CNY",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amountCents / 100);
-}
-
 function Balance({ amountCents }: { amountCents: number }) {
   if (amountCents > 0) {
     return (
       <p className="font-semibold text-emerald-600">
-        别人欠你 {formatCurrency(amountCents)}
+        别人欠你 {formatCents(amountCents)}
       </p>
     );
   }
   if (amountCents < 0) {
     return (
       <p className="font-semibold text-rose-600">
-        你欠别人 {formatCurrency(Math.abs(amountCents))}
+        你欠别人 {formatCents(Math.abs(amountCents))}
       </p>
     );
   }
@@ -82,9 +76,10 @@ export function HomeDashboard({
 
         <section className="grid gap-5 pb-16 md:grid-cols-2">
           {visibleGroups.map((group) => (
-            <article
+            <Link
               key={group.id}
-              className="group rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_14px_40px_rgba(15,23,42,0.06)] transition-transform hover:-translate-y-0.5"
+              href={`/groups/${group.id}`}
+              className="group block rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_14px_40px_rgba(15,23,42,0.06)] transition-transform hover:-translate-y-0.5"
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -115,7 +110,7 @@ export function HomeDashboard({
                   ))}
                 </div>
               </div>
-            </article>
+            </Link>
           ))}
         </section>
       </div>

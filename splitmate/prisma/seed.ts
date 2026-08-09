@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { demoUsers, seedGroups } from "../src/lib/seed-data.ts";
 
@@ -117,4 +118,6 @@ export function seedDatabase() {
   }
 }
 
-seedDatabase();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  seedDatabase();
+}
