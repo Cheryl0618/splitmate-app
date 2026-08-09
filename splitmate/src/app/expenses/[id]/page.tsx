@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ExpenseActions } from "@/components/expense-actions";
 import { formatCents } from "@/lib/format";
 import { getExpenseDetail } from "@/server/expenses";
 
@@ -39,8 +40,13 @@ export default async function ExpensePage({
           <span aria-hidden="true">←</span>
           返回{expense.groupName}
         </Link>
+        <ExpenseActions
+          expenseId={expense.id}
+          groupId={expense.groupId}
+          createdById={expense.createdById}
+        />
 
-        <article className="mt-10 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_16px_50px_rgba(15,23,42,0.07)]">
+        <article className="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_16px_50px_rgba(15,23,42,0.07)]">
           <header className="border-b border-slate-100 px-6 py-7 sm:px-8">
             <p className="text-sm font-semibold text-teal-700">账单详情</p>
             <h1

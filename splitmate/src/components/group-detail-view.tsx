@@ -125,11 +125,19 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
         </section>
 
         <section className="pb-16 pt-12" aria-labelledby="expenses-heading">
-          <div className="mb-5">
-            <h2 id="expenses-heading" className="text-xl font-bold">
-              账单列表
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">按日期查看群组内的所有支出</p>
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <h2 id="expenses-heading" className="text-xl font-bold">
+                账单列表
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">按日期查看群组内的所有支出</p>
+            </div>
+            <Link
+              href={`/groups/${group.id}/expenses/new`}
+              className="shrink-0 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-700"
+            >
+              记一笔
+            </Link>
           </div>
 
           <div className="space-y-8">

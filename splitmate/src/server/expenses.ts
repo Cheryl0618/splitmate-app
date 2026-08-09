@@ -1,4 +1,17 @@
 import { openDatabase } from "@/server/database";
+import type { SplitMethod } from "@/lib/split";
+
+export interface ExpenseFormMember {
+  id: string;
+  userId: string | null;
+  displayName: string;
+}
+
+export interface ExpenseFormGroupData {
+  id: string;
+  name: string;
+  members: ExpenseFormMember[];
+}
 
 export interface ExpenseDetailData {
   id: string;
@@ -7,7 +20,10 @@ export interface ExpenseDetailData {
   description: string;
   amountCents: number;
   date: string;
+  paidByMemberId: string;
   paidByName: string;
+  createdById: string;
+  splitMethod: SplitMethod;
   settled: boolean;
   photoUrls: string[];
   shares: Array<{
@@ -24,7 +40,10 @@ interface ExpenseRow {
   description: string;
   amountCents: number;
   date: number | string;
+  paidByMemberId: string;
   paidByName: string;
+  createdById: string;
+  splitMethod: "EQUAL" | "WEIGHTED" | "EXACT";
   settled: number;
   photoUrls: string | null;
 }
@@ -48,6 +67,44 @@ function parsePhotoUrls(value: string | null) {
   }
 }
 
+function splitMethodFromDatabase(
+  method: ExpenseRow["splitMethod"]
+): SplitMethod {
+  return method === "EQUAL" ? "equal" : method === "WEIGHTED" ? "percentage" : "amount";
+}
+
+export function getExpenseFormGroup(groupId: string): ExpenseFormGroupData | null {
+  const database = openDatabase();
+
+  try {
+    const group = database
+      .prepare(`SELECT id, name FROM "Group" WHERE id = ?`)
+      .get(groupId) as { id: string; name: string } | undefined;
+    if (!group) return null;
+
+    const memberRows = database
+      .prepare(
+        `SELECT id, userId, displayName
+         FROM "GroupMember"
+         WHERE groupId = ?
+         ORDER BY createdAt, id`
+      )
+      .all(groupId) as ExpenseFormMember[];
+
+    return {
+      id: group.id,
+      name: group.name,
+      members: memberRows.map(({ id, userId, displayName }) => ({
+        id,
+        userId,
+        displayName,
+      })),
+    };
+  } finally {
+    database.close();
+  }
+}
+
 export function getExpenseDetail(expenseId: string): ExpenseDetailData | null {
   const database = openDatabase();
 
@@ -59,6 +116,9 @@ export function getExpenseDetail(expenseId: string): ExpenseDetailData | null {
                 expense.description,
                 expense.amountCents,
                 expense.date,
+                expense.paidBy AS paidByMemberId,
+                expense.createdById,
+                expense.splitMethod,
                 expense.settled,
                 expense.photoUrls,
                 groupTable.name AS groupName,
@@ -88,7 +148,10 @@ export function getExpenseDetail(expenseId: string): ExpenseDetailData | null {
       description: expense.description,
       amountCents: expense.amountCents,
       date: new Date(expense.date).toISOString(),
+      paidByMemberId: expense.paidByMemberId,
       paidByName: expense.paidByName,
+      createdById: expense.createdById,
+      splitMethod: splitMethodFromDatabase(expense.splitMethod),
       settled: Boolean(expense.settled),
       photoUrls: parsePhotoUrls(expense.photoUrls),
       shares: shareRows.map(({ memberId, displayName, amountCents }) => ({

@@ -12,3 +12,9 @@ function databasePath() {
 export function openDatabase() {
   return new DatabaseSync(databasePath(), { readOnly: true });
 }
+
+export function openWritableDatabase() {
+  const database = new DatabaseSync(databasePath());
+  database.exec("PRAGMA foreign_keys = ON");
+  return database;
+}
