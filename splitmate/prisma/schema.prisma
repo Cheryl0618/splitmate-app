@@ -118,3 +118,15 @@ model Settlement {
   @@index([fromMemberId])
   @@index([toMemberId])
 }
+
+model InsightCache {
+  id          String   @id @default(cuid())
+  scopeType   String
+  scopeId     String
+  contentHash String
+  insights    String
+  createdAt   DateTime @default(now())
+
+  @@unique([scopeType, scopeId, contentHash])
+  @@index([scopeType, scopeId, createdAt])
+}

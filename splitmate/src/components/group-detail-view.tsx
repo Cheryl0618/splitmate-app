@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
+import { InsightsPanel } from "@/components/insights-panel";
 import { UserSwitcher } from "@/components/user-switcher";
 import { useCurrentUser } from "@/lib/current-user";
 import { formatCents } from "@/lib/format";
@@ -74,6 +75,10 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
         <div className="pb-8 pt-12 sm:pt-16">
           <p className="mb-2 text-sm font-semibold text-teal-700">共享账本</p>
           <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{group.name}</h1>
+        </div>
+
+        <div className="mb-8">
+          <InsightsPanel endpoint={`/api/groups/${group.id}/insights`} />
         </div>
 
         {balanceTotalCents !== 0 ? (

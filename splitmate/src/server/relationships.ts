@@ -1,23 +1,57 @@
-import type {
-  RelationshipExpense,
-  RelationshipSettlement,
+import {
+  computeRelationship,
+  type RelationshipExpense,
+  type RelationshipSettlement,
 } from "@/lib/relationship";
 import { openDatabase } from "@/server/database";
-import type { DemoUserSummary } from "@/server/groups";
 
-export interface RelationshipMember {
+interface RelationshipPageBase {
+  groupId: string;
+  groupName: string;
+  targetMemberId: string;
+  targetMemberName: string;
+}
+
+export type RelationshipPageData =
+  | (RelationshipPageBase & { state: "not-member" })
+  | (RelationshipPageBase & { state: "same-member" })
+  | (RelationshipPageBase & { state: "no-shared" })
+  | {
+      state: "ready";
+      groupId: string;
+      groupName: string;
+      targetMemberId: string;
+      targetMemberName: string;
+      overview: {
+        relationshipDuration: string;
+        totalSharedCents: number;
+        sharedExpenseCount: number;
+      };
+      recentBurden: {
+        fromMonth: string;
+        toMonth: string;
+        aRatioLabel: string;
+        bRatioLabel: string;
+        aWidth: string;
+        bWidth: string;
+        aCents: number;
+        bCents: number;
+      };
+      topCategories: Array<{ category: string; cents: number; count: number }>;
+      settlementHabits: {
+        avgSettleDaysLabel: string;
+        settledExpenseCount: number;
+        aPaidCount: number;
+        bPaidCount: number;
+        aPaidCents: number;
+        bPaidCents: number;
+      };
+    };
+
+interface MemberRow {
   id: string;
   userId: string | null;
   displayName: string;
-}
-
-export interface RelationshipPageData {
-  group: { id: string; name: string };
-  targetMember: RelationshipMember;
-  members: RelationshipMember[];
-  users: DemoUserSummary[];
-  expenses: RelationshipExpense[];
-  settlements: RelationshipSettlement[];
 }
 
 interface ExpenseRow {
@@ -40,9 +74,28 @@ interface SettlementRow {
   confirmedAt: number | string;
 }
 
+function relationshipDuration(firstExpenseAt: Date) {
+  const now = new Date();
+  const months = Math.max(
+    1,
+    (now.getUTCFullYear() - firstExpenseAt.getUTCFullYear()) * 12 +
+      now.getUTCMonth() -
+      firstExpenseAt.getUTCMonth()
+  );
+  if (months < 12) return `${months} 个月`;
+  const years = Math.floor(months / 12);
+  const remainingMonths = months % 12;
+  return remainingMonths > 0 ? `${years} 年 ${remainingMonths} 个月` : `${years} 年`;
+}
+
+function percentage(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
 export function getRelationshipPageData(
   groupId: string,
-  memberId: string
+  memberId: string,
+  currentUserId: string
 ): RelationshipPageData | null {
   const database = openDatabase();
 
@@ -52,20 +105,31 @@ export function getRelationshipPageData(
       .get(groupId) as { id: string; name: string } | undefined;
     if (!group) return null;
 
-    const members = database
+    const memberRows = database
       .prepare(
         `SELECT id, userId, displayName
          FROM "GroupMember"
          WHERE groupId = ?
          ORDER BY createdAt, id`
       )
-      .all(groupId) as RelationshipMember[];
-    const targetMember = members.find((member) => member.id === memberId);
+      .all(groupId) as MemberRow[];
+    const targetMember = memberRows.find((member) => member.id === memberId);
     if (!targetMember) return null;
 
-    const users = database
-      .prepare(`SELECT id, displayName FROM "User" ORDER BY createdAt, id`)
-      .all() as DemoUserSummary[];
+    const base = {
+      groupId: group.id,
+      groupName: group.name,
+      targetMemberId: targetMember.id,
+      targetMemberName: targetMember.displayName,
+    };
+    const currentMember = memberRows.find(
+      (member) => member.userId === currentUserId
+    );
+    if (!currentMember) return { state: "not-member", ...base };
+    if (currentMember.id === targetMember.id) {
+      return { state: "same-member", ...base };
+    }
+
     const expenseRows = database
       .prepare(
         `SELECT id, amountCents, paidBy, date, category
@@ -98,28 +162,78 @@ export function getRelationshipPageData(
       sharesByExpense.set(share.expenseId, shares);
     }
 
-    return {
-      group,
-      targetMember,
-      members: members.map(({ id, userId, displayName }) => ({
-        id,
-        userId,
-        displayName,
-      })),
-      users: users.map(({ id, displayName }) => ({ id, displayName })),
-      expenses: expenseRows.map((expense) => ({
-        id: expense.id,
-        amountCents: expense.amountCents,
-        paidBy: expense.paidBy,
-        date: new Date(expense.date).toISOString(),
-        category: expense.category,
-        shares: sharesByExpense.get(expense.id) ?? {},
-      })),
-      settlements: settlementRows.map((settlement) => ({
+    const expenses: RelationshipExpense[] = expenseRows.map((expense) => ({
+      id: expense.id,
+      amountCents: expense.amountCents,
+      paidBy: expense.paidBy,
+      date: new Date(expense.date).toISOString(),
+      category: expense.category,
+      shares: sharesByExpense.get(expense.id) ?? {},
+    }));
+    const settlements: RelationshipSettlement[] = settlementRows.map(
+      (settlement) => ({
         fromMemberId: settlement.fromMemberId,
         toMemberId: settlement.toMemberId,
         confirmedAt: new Date(settlement.confirmedAt).toISOString(),
+      })
+    );
+    const stats = computeRelationship(
+      expenses,
+      settlements,
+      currentMember.id,
+      targetMember.id
+    );
+    if (stats.sharedExpenseCount === 0) {
+      return { state: "no-shared", ...base };
+    }
+
+    const recentMonths = stats.monthlyTrend.slice(-3);
+    const recentACents = recentMonths.reduce(
+      (total, month) => total + month.aCents,
+      0
+    );
+    const recentBCents = recentMonths.reduce(
+      (total, month) => total + month.bCents,
+      0
+    );
+    const recentTotalCents = recentACents + recentBCents;
+    const recentARatio = recentTotalCents > 0 ? recentACents / recentTotalCents : 0;
+    const recentBRatio = recentTotalCents > 0 ? 1 - recentARatio : 0;
+
+    return {
+      state: "ready",
+      ...base,
+      overview: {
+        relationshipDuration: relationshipDuration(stats.firstSharedExpenseAt),
+        totalSharedCents: stats.totalSharedCents,
+        sharedExpenseCount: stats.sharedExpenseCount,
+      },
+      recentBurden: {
+        fromMonth: recentMonths[0]?.month ?? "",
+        toMonth: recentMonths.at(-1)?.month ?? "",
+        aRatioLabel: percentage(recentARatio),
+        bRatioLabel: percentage(recentBRatio),
+        aWidth: percentage(recentARatio),
+        bWidth: percentage(recentBRatio),
+        aCents: recentACents,
+        bCents: recentBCents,
+      },
+      topCategories: stats.topCategories.map(({ category, cents, count }) => ({
+        category,
+        cents,
+        count,
       })),
+      settlementHabits: {
+        avgSettleDaysLabel:
+          stats.settledExpenseCount > 0
+            ? `${stats.avgSettleDays.toFixed(1)} 天`
+            : "尚无记录",
+        settledExpenseCount: stats.settledExpenseCount,
+        aPaidCount: stats.aPaidCount,
+        bPaidCount: stats.bPaidCount,
+        aPaidCents: stats.aPaidCents,
+        bPaidCents: stats.bPaidCents,
+      },
     };
   } finally {
     database.close();

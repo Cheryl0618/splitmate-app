@@ -19,6 +19,7 @@ export function seedDatabase() {
 
   try {
     database.exec(`
+      DELETE FROM "InsightCache";
       DELETE FROM "Settlement";
       DELETE FROM "ExpenseShare";
       DELETE FROM "Expense";

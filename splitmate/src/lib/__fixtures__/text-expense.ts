@@ -1,5 +1,6 @@
 export const textExpenseFixture = {
   merchantName: "今晚聚餐",
+  category: "餐饮",
   totalYuan: 238,
   items: undefined,
   paidByMemberId: "member-home-xiaoli",

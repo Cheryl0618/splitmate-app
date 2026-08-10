@@ -1,5 +1,6 @@
 export const receiptFixture = {
-  merchantName: "邻里超市",
+  merchantName: "Whole Foods",
+  category: "超市",
   totalYuan: 120,
   taxYuan: 8,
   tipYuan: 0,

@@ -299,6 +299,7 @@ export function ExpenseForm({
       .join(" · ");
 
     setParseResult(result);
+    setCategory(result.category);
     setUnresolvedMappings({});
     if (result.totalCents > 0) {
       setAmountCents(result.totalCents);
@@ -360,6 +361,7 @@ export function ExpenseForm({
     } catch {
       applyParsedExpense(
         {
+          category: "其他",
           totalCents: 0,
           participantMemberIds: [],
           note: input.type === "text" ? input.data : undefined,
@@ -384,6 +386,7 @@ export function ExpenseForm({
       await requestParse({ type: "image", data });
     } catch {
       setParseResult({
+        category: "其他",
         totalCents: 0,
         participantMemberIds: [],
         unresolvedNames: [],
@@ -558,6 +561,18 @@ export function ExpenseForm({
             >
               识别结果可能不准，请核对
             </p>
+          ) : null}
+
+          {parseResult?.debugError ? (
+            <div
+              className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900"
+              role="status"
+            >
+              <p className="font-bold">开发调试信息</p>
+              <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-xs leading-5">
+                {parseResult.debugError}
+              </pre>
+            </div>
           ) : null}
 
           {parseResult?.unresolvedNames.length ? (

@@ -1,11 +1,22 @@
 import OpenAI from "openai";
+import type {
+  ResponseFormatTextJSONSchemaConfig,
+  ResponseInput,
+} from "openai/resources/responses/responses";
 
 import { parseFailureFixture } from "./__fixtures__/parse-failure";
 import { receiptFixture } from "./__fixtures__/receipt";
 import { textExpenseFixture } from "./__fixtures__/text-expense";
+import {
+  expenseCategories,
+  type ExpenseCategory,
+} from "./expense-input";
 
-const OPENAI_MODEL = "gpt-5.6-terra";
+export const OPENAI_MODEL = "gpt-5.6-terra";
 const OPENAI_TIMEOUT_MS = 10_000;
+let openAIClient: OpenAI | null = null;
+let openAIClientApiKey: string | null = null;
+let openAIClientFetch: typeof globalThis.fetch | null = null;
 
 export interface Member {
   id: string;
@@ -21,6 +32,7 @@ export interface ParsedExpenseItem {
 
 export interface ParsedExpense {
   merchantName?: string;
+  category: ExpenseCategory;
   totalCents: number;
   taxCents?: number;
   tipCents?: number;
@@ -30,6 +42,7 @@ export interface ParsedExpense {
   note?: string;
   unresolvedNames: string[];
   confidence: "high" | "low";
+  debugError?: string;
 }
 
 export type ParseExpenseInput =
@@ -44,6 +57,7 @@ interface ModelExpenseItem {
 
 interface ModelExpense {
   merchantName: string | null;
+  category: ExpenseCategory;
   totalYuan: number | null;
   taxYuan: number | null;
   tipYuan: number | null;
@@ -67,6 +81,12 @@ const EXPENSE_RESPONSE_FORMAT = {
       merchantName: {
         type: ["string", "null"],
         description: "Merchant or venue name, or null when it cannot be identified.",
+      },
+      category: {
+        type: "string",
+        enum: expenseCategories,
+        description:
+          "Choose exactly one category. 餐饮: meals, group dining, takeout, or restaurants. 咖啡: coffee, milk tea, or other drinks. 交通: taxi, Uber, subway, fuel, parking, or flights. 住宿: hotels, vacation rentals, or rent. 超市: supermarkets, groceries, Costco, or Whole Foods. 日用: toiletries, household supplies, or cleaning products. 娱乐: movies, games, admission tickets, or performances. 其他: use when none of the above clearly matches. If uncertain, return 其他 instead of guessing. For receipt images, infer from the merchant when reliable, such as Whole Foods → 超市 and Starbucks/星巴克 → 咖啡.",
       },
       totalYuan: {
         type: ["number", "null"],
@@ -132,6 +152,7 @@ const EXPENSE_RESPONSE_FORMAT = {
     },
     required: [
       "merchantName",
+      "category",
       "totalYuan",
       "taxYuan",
       "tipYuan",
@@ -145,13 +166,47 @@ const EXPENSE_RESPONSE_FORMAT = {
   },
 };
 
-function failureResult(input: ParseExpenseInput): ParsedExpense {
+function failureResult(
+  input: ParseExpenseInput,
+  debugError?: string
+): ParsedExpense {
   return {
+    category: "其他",
     totalCents: 0,
     participantMemberIds: [],
     note: input.type === "text" ? input.data : undefined,
     unresolvedNames: [],
     confidence: "low",
+    ...(debugError ? { debugError } : {}),
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function errorDiagnostics(error: unknown) {
+  const root = asRecord(error);
+  const apiError = asRecord(root?.error);
+  const rawStatus = root?.status;
+  const statusCode =
+    typeof rawStatus === "number" || typeof rawStatus === "string"
+      ? rawStatus
+      : undefined;
+  const apiMessage =
+    (typeof apiError?.message === "string" ? apiError.message : undefined) ??
+    (typeof root?.message === "string" ? root.message : undefined) ??
+    (error instanceof Error ? error.message : String(error));
+
+  return {
+    statusCode,
+    apiMessage,
+    debugError:
+      statusCode === undefined
+        ? apiMessage
+        : `OpenAI API ${statusCode}: ${apiMessage}`,
   };
 }
 
@@ -222,9 +277,13 @@ function normalizeModelExpense(
     typeof raw.paidByMemberId === "string" && validMemberIds.has(raw.paidByMemberId)
       ? raw.paidByMemberId
       : undefined;
+  const category = expenseCategories.includes(raw.category as ExpenseCategory)
+    ? (raw.category as ExpenseCategory)
+    : "其他";
 
   return {
     merchantName: optionalString(raw.merchantName),
+    category,
     totalCents,
     taxCents: yuanToCents(raw.taxYuan),
     tipCents: yuanToCents(raw.tipYuan),
@@ -258,6 +317,8 @@ function buildModelInput(input: ParseExpenseInput, members: Member[]) {
     "Match first-person references such as 我 to the member marked isCurrentUser.",
     "Put every mentioned name that cannot be matched in unresolvedNames.",
     "Do not invent prices, people, receipt lines, tax, tip, or payer details.",
+    "Classify the expense using the category rules in the response schema. Use 其他 whenever the evidence is insufficient; never guess a more specific category.",
+    "For receipt images, use a recognizable merchant when helpful: Whole Foods is 超市, Starbucks/星巴克 is 咖啡.",
     `Member directory: ${JSON.stringify(directory)}`,
   ].join(" ");
 
@@ -287,35 +348,67 @@ function buildModelInput(input: ParseExpenseInput, members: Member[]) {
   ];
 }
 
-async function callModel(input: ParseExpenseInput, members: Member[]) {
+export async function requestStructuredOutput(
+  input: string | ResponseInput,
+  format: ResponseFormatTextJSONSchemaConfig
+) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
 
-  const client = new OpenAI({
-    apiKey,
-    timeout: OPENAI_TIMEOUT_MS,
-    maxRetries: 0,
-  });
-  const response = await client.responses.create({
+  if (
+    !openAIClient ||
+    openAIClientApiKey !== apiKey ||
+    openAIClientFetch !== globalThis.fetch
+  ) {
+    openAIClient = new OpenAI({
+      apiKey,
+      timeout: OPENAI_TIMEOUT_MS,
+      maxRetries: 0,
+    });
+    openAIClientApiKey = apiKey;
+    openAIClientFetch = globalThis.fetch;
+  }
+  const response = await openAIClient.responses.create({
     model: OPENAI_MODEL,
-    input: buildModelInput(input, members),
-    text: { format: EXPENSE_RESPONSE_FORMAT },
+    input,
+    text: { format },
   });
   if (!response.output_text) throw new Error("AI response did not contain output");
   return JSON.parse(response.output_text) as unknown;
+}
+
+async function callModel(input: ParseExpenseInput, members: Member[]) {
+  return requestStructuredOutput(buildModelInput(input, members), EXPENSE_RESPONSE_FORMAT);
 }
 
 export async function parseExpense(
   input: ParseExpenseInput,
   members: Member[]
 ): Promise<ParsedExpense> {
-  if (process.env.MOCK_AI === "true") {
+  const mockAiRawValue = process.env.MOCK_AI;
+  const useMock = mockAiRawValue === "true";
+  console.log(
+    `[parseExpense] branch=${useMock ? "mock" : "real"} MOCK_AI=${JSON.stringify(mockAiRawValue)}`
+  );
+
+  if (useMock) {
     return normalizeModelExpense(mockResult(input), input, members);
   }
 
   try {
     return normalizeModelExpense(await callModel(input, members), input, members);
-  } catch {
-    return failureResult(input);
+  } catch (error) {
+    const diagnostics = errorDiagnostics(error);
+    console.error("[parseExpense] real branch failed", {
+      statusCode: diagnostics.statusCode,
+      apiMessage: diagnostics.apiMessage,
+      error,
+    });
+    return failureResult(
+      input,
+      process.env.NODE_ENV === "development"
+        ? diagnostics.debugError
+        : undefined
+    );
   }
 }
