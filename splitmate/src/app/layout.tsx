@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { SiteNav } from "@/components/site-nav";
 import { CurrentUserProvider } from "@/lib/current-user";
-import { getCurrentUserId } from "@/server/current-user";
+import { getAccountUsers } from "@/server/settings";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,12 +10,12 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const initialUserId = await getCurrentUserId();
+  const users = getAccountUsers();
 
   return (
     <html lang="zh-CN" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        <CurrentUserProvider initialUserId={initialUserId}>
+        <CurrentUserProvider users={users}>
           <SiteNav />
           {children}
         </CurrentUserProvider>

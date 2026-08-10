@@ -1,6 +1,7 @@
 import { openDatabase } from "@/server/database";
 import type { ExpenseCategory } from "@/lib/expense-input";
 import type { SplitMethod } from "@/lib/split";
+import type { Currency } from "@/lib/currency";
 
 export interface ExpenseFormMember {
   id: string;
@@ -11,6 +12,7 @@ export interface ExpenseFormMember {
 export interface ExpenseFormGroupData {
   id: string;
   name: string;
+  currency: Currency;
   members: ExpenseFormMember[];
 }
 
@@ -18,10 +20,12 @@ export interface ExpenseDetailData {
   id: string;
   groupId: string;
   groupName: string;
+  currency: Currency;
   description: string;
   amountCents: number;
   date: string;
   paidByMemberId: string;
+  paidByUserId: string | null;
   paidByName: string;
   createdById: string;
   category: ExpenseCategory;
@@ -30,6 +34,7 @@ export interface ExpenseDetailData {
   photoUrls: string[];
   shares: Array<{
     memberId: string;
+    userId: string | null;
     displayName: string;
     amountCents: number;
   }>;
@@ -39,10 +44,12 @@ interface ExpenseRow {
   id: string;
   groupId: string;
   groupName: string;
+  currency: Currency;
   description: string;
   amountCents: number;
   date: number | string;
   paidByMemberId: string;
+  paidByUserId: string | null;
   paidByName: string;
   createdById: string;
   category: ExpenseCategory;
@@ -53,6 +60,7 @@ interface ExpenseRow {
 
 interface ShareRow {
   memberId: string;
+  userId: string | null;
   displayName: string;
   amountCents: number;
 }
@@ -81,8 +89,8 @@ export function getExpenseFormGroup(groupId: string): ExpenseFormGroupData | nul
 
   try {
     const group = database
-      .prepare(`SELECT id, name FROM "Group" WHERE id = ?`)
-      .get(groupId) as { id: string; name: string } | undefined;
+      .prepare(`SELECT id, name, currency FROM "Group" WHERE id = ?`)
+      .get(groupId) as { id: string; name: string; currency: Currency } | undefined;
     if (!group) return null;
 
     const memberRows = database
@@ -97,6 +105,7 @@ export function getExpenseFormGroup(groupId: string): ExpenseFormGroupData | nul
     return {
       id: group.id,
       name: group.name,
+      currency: group.currency,
       members: memberRows.map(({ id, userId, displayName }) => ({
         id,
         userId,
@@ -120,12 +129,14 @@ export function getExpenseDetail(expenseId: string): ExpenseDetailData | null {
                 expense.amountCents,
                 expense.date,
                 expense.paidBy AS paidByMemberId,
+                payer.userId AS paidByUserId,
                 expense.createdById,
                 expense.category,
                 expense.splitMethod,
                 expense.settled,
                 expense.photoUrls,
                 groupTable.name AS groupName,
+                groupTable.currency,
                 payer.displayName AS paidByName
          FROM "Expense" AS expense
          INNER JOIN "Group" AS groupTable ON groupTable.id = expense.groupId
@@ -137,7 +148,7 @@ export function getExpenseDetail(expenseId: string): ExpenseDetailData | null {
 
     const shareRows = database
       .prepare(
-        `SELECT share.memberId, member.displayName, share.amountCents
+        `SELECT share.memberId, member.userId, member.displayName, share.amountCents
          FROM "ExpenseShare" AS share
          INNER JOIN "GroupMember" AS member ON member.id = share.memberId
          WHERE share.expenseId = ?
@@ -149,18 +160,21 @@ export function getExpenseDetail(expenseId: string): ExpenseDetailData | null {
       id: expense.id,
       groupId: expense.groupId,
       groupName: expense.groupName,
+      currency: expense.currency,
       description: expense.description,
       amountCents: expense.amountCents,
       date: new Date(expense.date).toISOString(),
       paidByMemberId: expense.paidByMemberId,
+      paidByUserId: expense.paidByUserId,
       paidByName: expense.paidByName,
       createdById: expense.createdById,
       category: expense.category,
       splitMethod: splitMethodFromDatabase(expense.splitMethod),
       settled: Boolean(expense.settled),
       photoUrls: parsePhotoUrls(expense.photoUrls),
-      shares: shareRows.map(({ memberId, displayName, amountCents }) => ({
+      shares: shareRows.map(({ memberId, userId, displayName, amountCents }) => ({
         memberId,
+        userId,
         displayName,
         amountCents,
       })),

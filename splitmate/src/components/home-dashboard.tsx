@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { useCurrentUser } from "@/lib/current-user";
 import { formatCents } from "@/lib/format";
+import type { Currency } from "@/lib/currency";
 import type { DemoUserSummary, GroupCardData } from "@/server/groups";
-import { UserSwitcher } from "./user-switcher";
+import { GroupForm } from "./group-form";
 
 const avatarColors = [
   "bg-teal-100 text-teal-800",
@@ -16,18 +18,18 @@ const avatarColors = [
   "bg-rose-100 text-rose-800",
 ];
 
-function Balance({ amountCents }: { amountCents: number }) {
+function Balance({ amountCents, currency }: { amountCents: number; currency: Currency }) {
   if (amountCents > 0) {
     return (
       <p className="font-semibold text-emerald-600">
-        别人欠你 {formatCents(amountCents)}
+        别人欠你 {formatCents(amountCents, currency)}
       </p>
     );
   }
   if (amountCents < 0) {
     return (
       <p className="font-semibold text-rose-600">
-        你欠别人 {formatCents(Math.abs(amountCents))}
+        你欠别人 {formatCents(Math.abs(amountCents), currency)}
       </p>
     );
   }
@@ -42,7 +44,8 @@ export function HomeDashboard({
   groups: GroupCardData[];
 }) {
   const { currentUserId } = useCurrentUser();
-  const currentUser = users.find((user) => user.id === currentUserId) ?? users[0];
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const currentUser = users.find((user) => user.id === currentUserId);
   const visibleGroups = groups.filter((group) =>
     group.members.some((member) => member.userId === currentUser?.id)
   );
@@ -50,13 +53,19 @@ export function HomeDashboard({
   return (
     <main className="min-h-screen bg-[#f6f8f7] text-slate-900">
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-8 lg:px-12">
-        <header className="flex justify-end">
-          <UserSwitcher users={users} />
+        <header className="flex items-center justify-start gap-3">
+          <button
+            type="button"
+            onClick={() => setShowCreateGroup(true)}
+            className="rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-700"
+          >
+            创建群组
+          </button>
         </header>
 
         <section className="pb-8 pt-16 sm:pt-20">
           <p className="mb-2 text-sm font-semibold text-teal-700">
-            你好，{currentUser?.displayName ?? "小李"}
+            你好
           </p>
           <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
             你的群组
@@ -72,11 +81,14 @@ export function HomeDashboard({
               title="还没有可查看的群组"
               description={
                 users.length > 0
-                  ? "当前身份还没有加入群组。先切换右上角的演示用户，看看其他成员加入的共享账本。"
+                  ? "你还没有加入群组。创建一个群组，选择货币后就可以开始共同记账。"
                   : "演示数据还没有准备好。请先运行数据库 seed，再回来查看群组。"
               }
-              actionHref={users.length > 0 ? "#demo-user-switcher" : "/"}
-              actionLabel={users.length > 0 ? "选择其他用户" : "重新检查"}
+              actionHref={users.length > 0 ? "/groups/new" : "/"}
+              actionLabel={users.length > 0 ? "创建第一个群组" : "重新检查"}
+              onAction={
+                users.length > 0 ? () => setShowCreateGroup(true) : undefined
+              }
             />
           </div>
         ) : (
@@ -102,16 +114,19 @@ export function HomeDashboard({
               <div className="mt-8 flex items-end justify-between gap-5 border-t border-slate-100 pt-5">
                 <div>
                   <p className="mb-2 text-xs font-medium text-slate-400">当前余额</p>
-                  <Balance amountCents={group.balancesByUserId[currentUserId] ?? 0} />
+                  <Balance
+                    amountCents={group.balancesByUserId[currentUserId] ?? 0}
+                    currency={group.currency}
+                  />
                 </div>
                 <div className="flex -space-x-2" aria-label={`${group.members.length} 位成员`}>
                   {group.members.map((member, index) => (
                     <span
                       key={member.id}
-                      title={member.displayName}
+                      title={member.userId === currentUserId ? "你" : member.displayName}
                       className={`grid h-9 w-9 place-items-center rounded-full border-2 border-white text-xs font-bold ${avatarColors[index % avatarColors.length]}`}
                     >
-                      {member.displayName.slice(0, 1).toUpperCase()}
+                      {(member.userId === currentUserId ? "你" : member.displayName).slice(0, 1).toUpperCase()}
                     </span>
                   ))}
                 </div>
@@ -121,6 +136,9 @@ export function HomeDashboard({
           </section>
         )}
       </div>
+      {showCreateGroup ? (
+        <GroupForm modal onCancel={() => setShowCreateGroup(false)} />
+      ) : null}
     </main>
   );
 }

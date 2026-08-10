@@ -4,10 +4,20 @@ import { getExpenseFormGroup } from "@/server/expenses";
 function isParseInput(value: unknown): value is ParseExpenseInput {
   if (!value || typeof value !== "object") return false;
   const input = value as Record<string, unknown>;
-  return (
-    (input.type === "image" || input.type === "text") &&
-    typeof input.data === "string" &&
-    input.data.trim().length > 0
+  if (typeof input.data !== "string" || input.data.trim().length === 0) return false;
+  if (input.type === "image" || input.type === "text") return true;
+  if (input.type !== "clarification" || !input.context || typeof input.context !== "object") {
+    return false;
+  }
+  const context = input.context as Record<string, unknown>;
+  const originalInput = context.originalInput;
+  return Boolean(
+    originalInput &&
+      typeof originalInput === "object" &&
+      context.determined &&
+      typeof context.determined === "object" &&
+      Array.isArray(context.history) &&
+      typeof context.pendingQuestion === "string"
   );
 }
 

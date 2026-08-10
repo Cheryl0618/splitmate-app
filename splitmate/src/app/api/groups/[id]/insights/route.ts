@@ -8,6 +8,7 @@ async function respond(
   const { id } = await params;
   const stats = getGroupStats(id);
   if (!stats) return Response.json({ insights: [] }, { status: 404 });
+  if (stats.expenseCount === 0) return Response.json({ insights: [] });
 
   const result = await getOrGenerateInsights("group", id, stats, { force });
   return Response.json({ insights: result.insights });

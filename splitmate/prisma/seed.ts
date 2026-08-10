@@ -34,8 +34,8 @@ export function seedDatabase() {
       VALUES (?, ?, ?, NULL, ?, ?)
     `);
     const insertGroup = database.prepare(`
-      INSERT INTO "Group" (id, name, ownerId, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO "Group" (id, name, currency, ownerId, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
     const insertMember = database.prepare(`
       INSERT INTO "GroupMember" (id, groupId, userId, displayName, createdAt)
@@ -62,7 +62,7 @@ export function seedDatabase() {
     }
 
     for (const group of seedGroups) {
-      insertGroup.run(group.id, group.name, group.ownerId, now, now);
+      insertGroup.run(group.id, group.name, group.currency, group.ownerId, now, now);
 
       for (const member of group.members) {
         insertMember.run(member.id, group.id, member.userId, member.displayName, now);

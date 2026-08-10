@@ -11,6 +11,12 @@ import {
   type SplitParticipant,
 } from "@/lib/split";
 import { openDatabase, openWritableDatabase } from "@/server/database";
+import {
+  LimitValidationError,
+  validateExpenseCount,
+  validateExpenseLimits,
+  validateMemberCount,
+} from "@/lib/limits";
 
 export class ExpenseMutationError extends Error {
   constructor(
@@ -93,7 +99,15 @@ function validateInput(value: unknown) {
     throw new ExpenseMutationError("账单金额必须大于零且精确到分", 400);
   }
   if (!input.description) {
-    throw new ExpenseMutationError("请填写账单说明", 400);
+    throw new ExpenseMutationError("请填写账单标题", 400);
+  }
+  try {
+    validateExpenseLimits(input);
+  } catch (error) {
+    if (error instanceof LimitValidationError) {
+      throw new ExpenseMutationError(error.message, 400);
+    }
+    throw error;
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
     throw new ExpenseMutationError("账单日期格式不正确", 400);
@@ -164,7 +178,21 @@ export function createExpense(
   const memberRows = database
     .prepare(`SELECT id FROM "GroupMember" WHERE groupId = ?`)
     .all(groupId) as MemberIdRow[];
+  const expenseCount = (
+    database
+      .prepare(`SELECT COUNT(*) AS count FROM "Expense" WHERE groupId = ?`)
+      .get(groupId) as { count: number }
+  ).count;
   database.close();
+  try {
+    validateMemberCount(memberRows.length);
+    validateExpenseCount(expenseCount);
+  } catch (error) {
+    if (error instanceof LimitValidationError) {
+      throw new ExpenseMutationError(error.message, 400);
+    }
+    throw error;
+  }
   validateMembers(groupId, input.paidBy, input.participants, currentUserId, memberRows);
 
   const expenseId = randomUUID();

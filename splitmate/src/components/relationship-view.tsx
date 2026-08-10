@@ -3,7 +3,7 @@
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
-import { InsightsPanel } from "@/components/insights-panel";
+import { ConsumptionSummaryPanel } from "@/components/consumption-summary-panel";
 import { formatCents } from "@/lib/format";
 import type { RelationshipPageData } from "@/server/relationships";
 
@@ -13,8 +13,8 @@ export function RelationshipView({ data }: { data: RelationshipPageData }) {
       <main className="min-h-screen bg-[#f6f8f7] px-4 py-12 text-slate-900">
         <div className="mx-auto max-w-3xl">
           <EmptyState
-            title="当前用户不在这个群组"
-            description="返回群组并选择群组内的演示身份，再查看与成员之间的消费关系。"
+            title="你不在这个群组"
+            description="返回首页打开你已加入的群组，再查看与成员之间的消费关系。"
             actionHref={`/groups/${data.groupId}`}
             actionLabel="返回群组"
           />
@@ -77,14 +77,15 @@ export function RelationshipView({ data }: { data: RelationshipPageData }) {
         </div>
 
         <div className="space-y-6 pb-16">
-          <InsightsPanel
+          <ConsumptionSummaryPanel
             endpoint={`/api/groups/${data.groupId}/members/${data.targetMemberId}/insights`}
+            currency={data.currency}
           />
 
           <section className="grid gap-4 sm:grid-cols-3" aria-label="关系概览">
             {[
               ["认识时长", data.overview.relationshipDuration],
-              ["一起消费", formatCents(data.overview.totalSharedCents)],
+              ["一起消费", formatCents(data.overview.totalSharedCents, data.currency)],
               ["一起花钱", `${data.overview.sharedExpenseCount} 次`],
             ].map(([label, value]) => (
               <div
@@ -127,7 +128,7 @@ export function RelationshipView({ data }: { data: RelationshipPageData }) {
                   你承担 {data.recentBurden.aRatioLabel}
                 </p>
                 <p className="mt-1 text-teal-700">
-                  {formatCents(data.recentBurden.aCents)}
+                  {formatCents(data.recentBurden.aCents, data.currency)}
                 </p>
               </div>
               <div className="rounded-2xl bg-amber-50 px-4 py-3 text-amber-950">
@@ -135,7 +136,7 @@ export function RelationshipView({ data }: { data: RelationshipPageData }) {
                   {data.targetMemberName}承担 {data.recentBurden.bRatioLabel}
                 </p>
                 <p className="mt-1 text-amber-700">
-                  {formatCents(data.recentBurden.bCents)}
+                  {formatCents(data.recentBurden.bCents, data.currency)}
                 </p>
               </div>
             </div>
@@ -149,7 +150,7 @@ export function RelationshipView({ data }: { data: RelationshipPageData }) {
                 <div key={category.category} className="rounded-2xl bg-slate-50 p-4">
                   <p className="text-xs font-bold text-teal-700">TOP {index + 1}</p>
                   <p className="mt-2 text-lg font-bold">{category.category}</p>
-                  <p className="mt-3 font-extrabold">{formatCents(category.cents)}</p>
+                  <p className="mt-3 font-extrabold">{formatCents(category.cents, data.currency)}</p>
                   <p className="mt-1 text-sm text-slate-500">{category.count} 笔</p>
                 </div>
               ))}
@@ -173,7 +174,7 @@ export function RelationshipView({ data }: { data: RelationshipPageData }) {
                   你请客 {data.settlementHabits.aPaidCount} 次
                 </p>
                 <p className="mt-2 text-xl font-extrabold">
-                  垫付 {formatCents(data.settlementHabits.aPaidCents)}
+                  垫付 {formatCents(data.settlementHabits.aPaidCents, data.currency)}
                 </p>
               </div>
               <div className="rounded-2xl bg-amber-50 p-4 text-amber-950">
@@ -181,7 +182,7 @@ export function RelationshipView({ data }: { data: RelationshipPageData }) {
                   {data.targetMemberName}请客 {data.settlementHabits.bPaidCount} 次
                 </p>
                 <p className="mt-2 text-xl font-extrabold">
-                  垫付 {formatCents(data.settlementHabits.bPaidCents)}
+                  垫付 {formatCents(data.settlementHabits.bPaidCents, data.currency)}
                 </p>
               </div>
             </div>

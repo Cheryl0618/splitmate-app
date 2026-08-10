@@ -4,13 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 
 import { formatCents } from "@/lib/format";
 import { useCurrentUser } from "@/lib/current-user";
-import type { Insight, InsightKind } from "@/lib/insights";
+import type { Insight, InsightKind } from "@/lib/consumption-summary";
+import type { Currency } from "@/lib/currency";
 
 const KIND_STYLES: Record<InsightKind, string> = {
+  fact: "bg-teal-500",
   trend: "bg-sky-500",
-  pattern: "bg-teal-500",
-  suggestion: "bg-amber-400",
-  anomaly: "bg-rose-500",
 };
 
 function isInsight(value: unknown): value is Insight {
@@ -18,7 +17,7 @@ function isInsight(value: unknown): value is Insight {
   const item = value as Record<string, unknown>;
   return (
     typeof item.text === "string" &&
-    ["trend", "pattern", "suggestion", "anomaly"].includes(String(item.kind)) &&
+    ["fact", "trend"].includes(String(item.kind)) &&
     (item.relatedCents === undefined || Number.isSafeInteger(item.relatedCents))
   );
 }
@@ -26,7 +25,7 @@ function isInsight(value: unknown): value is Insight {
 function LoadingCard() {
   return (
     <section
-      aria-label="正在生成消费洞察"
+      aria-label="正在生成消费总结"
       aria-busy="true"
       className="min-h-44 animate-pulse rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)] sm:p-6"
     >
@@ -39,7 +38,13 @@ function LoadingCard() {
   );
 }
 
-export function InsightsPanel({ endpoint }: { endpoint: string }) {
+export function ConsumptionSummaryPanel({
+  endpoint,
+  currency = "CNY",
+}: {
+  endpoint: string;
+  currency?: Currency;
+}) {
   const { currentUserId } = useCurrentUser();
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,7 +73,7 @@ export function InsightsPanel({ endpoint }: { endpoint: string }) {
         }
       } catch (error) {
         if (!signal?.aborted) {
-          console.error("[InsightsPanel] failed", error);
+          console.error("[ConsumptionSummaryPanel] failed", error);
           setInsights([]);
           setFailed(true);
         }
@@ -81,8 +86,13 @@ export function InsightsPanel({ endpoint }: { endpoint: string }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    void load(false, controller.signal);
-    return () => controller.abort();
+    const timer = window.setTimeout(() => {
+      void load(false, controller.signal);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [load]);
 
   if (loading && insights.length === 0) return <LoadingCard />;
@@ -92,7 +102,7 @@ export function InsightsPanel({ endpoint }: { endpoint: string }) {
     <section className="min-h-44 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)] sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold">AI 消费洞察</h2>
+          <h2 className="text-lg font-bold">AI 消费总结</h2>
           <p className="mt-1 text-xs text-slate-400">根据当前聚合统计生成</p>
         </div>
         <button
@@ -121,7 +131,7 @@ export function InsightsPanel({ endpoint }: { endpoint: string }) {
               </p>
               {insight.relatedCents !== undefined ? (
                 <span className="mt-1 inline-flex rounded-full bg-white px-2 py-0.5 text-xs font-bold text-teal-700">
-                  {formatCents(insight.relatedCents)}
+                  {formatCents(insight.relatedCents, currency)}
                 </span>
               ) : null}
             </div>

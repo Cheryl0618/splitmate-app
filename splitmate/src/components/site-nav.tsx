@@ -5,6 +5,9 @@ import { usePathname } from "next/navigation";
 
 function currentLocation(pathname: string) {
   if (pathname === "/") return "首页";
+  if (pathname === "/groups/new") return "创建群组";
+  if (pathname === "/settings") return "个人设置";
+  if (/^\/groups\/[^/]+\/settings$/.test(pathname)) return "群组设置";
   if (/^\/groups\/[^/]+\/settle$/.test(pathname)) return "结算方案";
   if (/^\/groups\/[^/]+\/members\/[^/]+$/.test(pathname)) return "关系画像";
   if (/^\/groups\/[^/]+\/expenses\/new$/.test(pathname)) return "新建账单";
@@ -53,6 +56,14 @@ export function SiteNav() {
           >
             {currentLocation(pathname)}
           </span>
+          {pathname !== "/settings" ? (
+            <Link
+              href="/settings"
+              className="shrink-0 rounded-xl px-2 py-1.5 font-bold text-slate-500 hover:bg-slate-50 hover:text-teal-700 sm:px-3"
+            >
+              设置
+            </Link>
+          ) : null}
         </div>
       </div>
     </nav>

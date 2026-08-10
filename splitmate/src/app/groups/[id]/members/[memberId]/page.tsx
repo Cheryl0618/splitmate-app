@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { RelationshipView } from "@/components/relationship-view";
-import { getCurrentUserId } from "@/server/current-user";
+import { RelationshipPageClient } from "@/components/relationship-page-client";
 import { getRelationshipPageData } from "@/server/relationships";
 
 export default async function RelationshipPage({
@@ -10,9 +9,8 @@ export default async function RelationshipPage({
   params: Promise<{ id: string; memberId: string }>;
 }) {
   const { id, memberId } = await params;
-  const currentUserId = await getCurrentUserId();
-  const data = getRelationshipPageData(id, memberId, currentUserId);
-  if (!data) notFound();
+  const target = getRelationshipPageData(id, memberId, "");
+  if (!target) notFound();
 
-  return <RelationshipView data={data} />;
+  return <RelationshipPageClient groupId={id} memberId={memberId} />;
 }

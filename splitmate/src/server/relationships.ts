@@ -4,10 +4,12 @@ import {
   type RelationshipSettlement,
 } from "@/lib/relationship";
 import { openDatabase } from "@/server/database";
+import type { Currency } from "@/lib/currency";
 
 interface RelationshipPageBase {
   groupId: string;
   groupName: string;
+  currency: Currency;
   targetMemberId: string;
   targetMemberName: string;
 }
@@ -20,6 +22,7 @@ export type RelationshipPageData =
       state: "ready";
       groupId: string;
       groupName: string;
+      currency: Currency;
       targetMemberId: string;
       targetMemberName: string;
       overview: {
@@ -101,8 +104,8 @@ export function getRelationshipPageData(
 
   try {
     const group = database
-      .prepare(`SELECT id, name FROM "Group" WHERE id = ?`)
-      .get(groupId) as { id: string; name: string } | undefined;
+      .prepare(`SELECT id, name, currency FROM "Group" WHERE id = ?`)
+      .get(groupId) as { id: string; name: string; currency: Currency } | undefined;
     if (!group) return null;
 
     const memberRows = database
@@ -119,6 +122,7 @@ export function getRelationshipPageData(
     const base = {
       groupId: group.id,
       groupName: group.name,
+      currency: group.currency,
       targetMemberId: targetMember.id,
       targetMemberName: targetMember.displayName,
     };

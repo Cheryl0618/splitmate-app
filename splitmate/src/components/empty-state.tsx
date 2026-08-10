@@ -5,13 +5,17 @@ export function EmptyState({
   description,
   actionHref,
   actionLabel,
+  onAction,
   tone = "neutral",
+  prominentAction = false,
 }: {
   title: string;
   description: string;
   actionHref: string;
   actionLabel: string;
+  onAction?: () => void;
   tone?: "neutral" | "success";
+  prominentAction?: boolean;
 }) {
   const isSuccess = tone === "success";
 
@@ -47,16 +51,30 @@ export function EmptyState({
       >
         {description}
       </p>
-      <Link
-        href={actionHref}
-        className={`mt-6 inline-flex min-h-11 items-center justify-center rounded-xl px-5 py-2.5 text-sm font-bold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+      {onAction ? (
+        <button
+          type="button"
+          onClick={onAction}
+          className={`mt-6 inline-flex min-h-11 items-center justify-center px-5 py-2.5 text-sm font-bold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${prominentAction ? "rounded-full shadow-lg shadow-teal-900/15" : "rounded-xl"} ${
           isSuccess
             ? "bg-emerald-600 hover:bg-emerald-700 focus-visible:ring-emerald-500"
             : "bg-teal-600 hover:bg-teal-700 focus-visible:ring-teal-500"
         }`}
-      >
-        {actionLabel}
-      </Link>
+        >
+          {actionLabel}
+        </button>
+      ) : (
+        <Link
+          href={actionHref}
+          className={`mt-6 inline-flex min-h-11 items-center justify-center px-5 py-2.5 text-sm font-bold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${prominentAction ? "rounded-full shadow-lg shadow-teal-900/15" : "rounded-xl"} ${
+            isSuccess
+              ? "bg-emerald-600 hover:bg-emerald-700 focus-visible:ring-emerald-500"
+              : "bg-teal-600 hover:bg-teal-700 focus-visible:ring-teal-500"
+          }`}
+        >
+          {actionLabel}
+        </Link>
+      )}
     </section>
   );
 }

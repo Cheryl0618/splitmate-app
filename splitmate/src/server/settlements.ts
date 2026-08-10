@@ -6,7 +6,8 @@ import {
   type Transfer,
 } from "@/lib/settlement";
 import { openDatabase } from "@/server/database";
-import type { DemoUserSummary } from "@/server/groups";
+import type { Currency } from "@/lib/currency";
+import { getExportSummaryData, type ExportSummaryData } from "@/server/export-summary";
 
 export interface SettlementMember {
   id: string;
@@ -17,6 +18,7 @@ export interface SettlementMember {
 export interface ExplanationItem {
   expenseId: string;
   description: string;
+  counterpartyId: string;
   counterpartyName: string;
   amountCents: number;
 }
@@ -34,17 +36,28 @@ export interface SettlementTransferData extends Transfer {
 export interface SettlementPageData {
   id: string;
   name: string;
-  users: DemoUserSummary[];
+  currency: Currency;
   members: SettlementMember[];
   balances: Record<string, number>;
   directTransfers: SettlementTransferData[];
   optimalTransfers: SettlementTransferData[];
   isSettled: boolean;
+  confirmedSettlements: Array<{
+    id: string;
+    fromMemberId: string;
+    toMemberId: string;
+    fromName: string;
+    toName: string;
+    amountCents: number;
+    confirmedAt: string;
+  }>;
+  exportSummary: ExportSummaryData;
 }
 
 interface GroupRow {
   id: string;
   name: string;
+  currency: Currency;
 }
 
 interface ExpenseRow {
@@ -65,6 +78,7 @@ interface SettlementRow {
   fromMemberId: string;
   toMemberId: string;
   amountCents: number;
+  confirmedAt: number | string;
 }
 
 export function getSettlementPageData(groupId: string): SettlementPageData | null {
@@ -72,13 +86,10 @@ export function getSettlementPageData(groupId: string): SettlementPageData | nul
 
   try {
     const group = database
-      .prepare(`SELECT id, name FROM "Group" WHERE id = ?`)
+      .prepare(`SELECT id, name, currency FROM "Group" WHERE id = ?`)
       .get(groupId) as GroupRow | undefined;
     if (!group) return null;
 
-    const users = database
-      .prepare(`SELECT id, displayName FROM "User" ORDER BY createdAt, id`)
-      .all() as DemoUserSummary[];
     const memberRows = database
       .prepare(
         `SELECT id, userId, displayName
@@ -105,7 +116,7 @@ export function getSettlementPageData(groupId: string): SettlementPageData | nul
       .all(groupId) as ShareRow[];
     const settlementRows = database
       .prepare(
-        `SELECT id, fromMemberId, toMemberId, amountCents
+        `SELECT id, fromMemberId, toMemberId, amountCents, confirmedAt
          FROM "Settlement"
          WHERE groupId = ?
          ORDER BY confirmedAt, id`
@@ -158,6 +169,7 @@ export function getSettlementPageData(groupId: string): SettlementPageData | nul
           {
             expenseId: expense.id,
             description: expense.description,
+            counterpartyId: expense.paidBy,
             counterpartyName: memberNames.get(expense.paidBy) ?? "未知成员",
             amountCents,
           },
@@ -172,6 +184,7 @@ export function getSettlementPageData(groupId: string): SettlementPageData | nul
           {
             expenseId: expense.id,
             description: expense.description,
+            counterpartyId: "",
             counterpartyName: "群组成员",
             amountCents,
           },
@@ -192,10 +205,13 @@ export function getSettlementPageData(groupId: string): SettlementPageData | nul
       };
     };
 
+    const exportSummary = getExportSummaryData(groupId);
+    if (!exportSummary) return null;
+
     return {
       id: group.id,
       name: group.name,
-      users: users.map(({ id, displayName }) => ({ id, displayName })),
+      currency: group.currency,
       members,
       balances: Object.fromEntries(
         members.map((member) => [member.id, balances.get(member.id) ?? 0])
@@ -203,6 +219,18 @@ export function getSettlementPageData(groupId: string): SettlementPageData | nul
       directTransfers: directTransfers.map(withExplanation),
       optimalTransfers: optimalTransfers.map(withExplanation),
       isSettled: members.every((member) => (balances.get(member.id) ?? 0) === 0),
+      confirmedSettlements: settlementRows
+        .map((settlement) => ({
+          id: settlement.id,
+          fromMemberId: settlement.fromMemberId,
+          toMemberId: settlement.toMemberId,
+          fromName: memberNames.get(settlement.fromMemberId) ?? "未知成员",
+          toName: memberNames.get(settlement.toMemberId) ?? "未知成员",
+          amountCents: settlement.amountCents,
+          confirmedAt: new Date(settlement.confirmedAt).toISOString(),
+        }))
+        .reverse(),
+      exportSummary,
     };
   } finally {
     database.close();

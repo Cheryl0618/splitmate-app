@@ -45,6 +45,7 @@ export interface SeedSettlement {
 export interface SeedGroup {
   id: string;
   name: string;
+  currency: "CNY" | "USD";
   ownerId: string;
   members: SeedMember[];
   expenses: SeedExpense[];
@@ -346,6 +347,7 @@ export const seedGroups: SeedGroup[] = [
   {
     id: "group-home",
     name: "合租",
+    currency: "CNY",
     ownerId: "user-xiaoli",
     members: homeMembers,
     expenses: homeExpenses,
@@ -354,6 +356,7 @@ export const seedGroups: SeedGroup[] = [
   {
     id: "group-hawaii",
     name: "夏威夷旅行",
+    currency: "USD",
     ownerId: "user-xiaoli",
     members: hawaiiMembers,
     expenses: [

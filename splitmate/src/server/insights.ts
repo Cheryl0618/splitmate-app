@@ -5,7 +5,7 @@ import {
   normalizeInsights,
   type Insight,
   type InsightType,
-} from "@/lib/insights";
+} from "@/lib/consumption-summary";
 import type { GroupStats } from "@/lib/group-stats";
 import type { RelationshipStats } from "@/lib/relationship";
 import { openDatabase, openWritableDatabase } from "@/server/database";

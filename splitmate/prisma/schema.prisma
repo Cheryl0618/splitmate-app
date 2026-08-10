@@ -24,6 +24,20 @@ enum ExpenseCategory {
   OTHER         @map("其他")
 }
 
+enum Currency {
+  CNY
+  USD
+  EUR
+  GBP
+  JPY
+  CAD
+  AUD
+  HKD
+  SGD
+  KRW
+  TWD
+}
+
 model User {
   id              String        @id @default(cuid())
   displayName     String
@@ -39,6 +53,7 @@ model User {
 model Group {
   id          String        @id @default(cuid())
   name        String
+  currency    Currency      @default(CNY)
   ownerId     String
   owner       User          @relation("GroupOwner", fields: [ownerId], references: [id])
   members     GroupMember[]

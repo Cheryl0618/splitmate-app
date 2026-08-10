@@ -1,5 +1,6 @@
 import { getGroupBalances } from "@/server/balances";
 import { openDatabase } from "@/server/database";
+import type { Currency } from "@/lib/currency";
 
 export interface DemoUserSummary {
   id: string;
@@ -15,6 +16,7 @@ export interface GroupMemberSummary {
 export interface GroupCardData {
   id: string;
   name: string;
+  currency: Currency;
   members: GroupMemberSummary[];
   balancesByUserId: Record<string, number>;
 }
@@ -22,6 +24,7 @@ export interface GroupCardData {
 interface GroupRow {
   id: string;
   name: string;
+  currency: Currency;
 }
 
 interface MemberRow extends GroupMemberSummary {
@@ -39,7 +42,7 @@ export function getGroupListData(): {
       .prepare(`SELECT id, displayName FROM "User" ORDER BY createdAt, id`)
       .all() as DemoUserSummary[];
     const groupRows = database
-      .prepare(`SELECT id, name FROM "Group" ORDER BY createdAt, id`)
+      .prepare(`SELECT id, name, currency FROM "Group" ORDER BY createdAt, id`)
       .all() as GroupRow[];
     const memberRows = database
       .prepare(
@@ -59,6 +62,7 @@ export function getGroupListData(): {
       return {
         id: group.id,
         name: group.name,
+        currency: group.currency,
         members: members.map(({ id, userId, displayName }) => ({
           id,
           userId,

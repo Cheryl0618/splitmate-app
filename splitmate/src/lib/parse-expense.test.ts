@@ -23,6 +23,7 @@ function expectParsedShape(result: ParsedExpense) {
   expect(Array.isArray(result.participantMemberIds)).toBe(true);
   expect(Array.isArray(result.unresolvedNames)).toBe(true);
   expect(["high", "low"]).toContain(result.confidence);
+  expect(typeof result.needsClarification).toBe("boolean");
   if (result.taxCents !== undefined) expect(Number.isInteger(result.taxCents)).toBe(true);
   if (result.tipCents !== undefined) expect(Number.isInteger(result.tipCents)).toBe(true);
   for (const item of result.items ?? []) {
@@ -93,15 +94,21 @@ describe("parseExpense in mock mode", () => {
   });
 
   it("returns a low-confidence shell instead of throwing for the failure fixture", async () => {
-    await expect(
-      parseExpense({ type: "image", data: "mock-failure" }, members)
-    ).resolves.toEqual({
-      category: "其他",
-      totalCents: 0,
-      participantMemberIds: [],
-      unresolvedNames: [],
-      confidence: "low",
-    });
+    const result = await parseExpense(
+      { type: "image", data: "mock-failure" },
+      members
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        category: "其他",
+        totalCents: 0,
+        participantMemberIds: [],
+        unresolvedNames: [],
+        confidence: "low",
+        needsClarification: true,
+        clarificationQuestion: "这笔账的总金额是多少？",
+      })
+    );
   });
 
   it("allocates all tax cents proportionally without losing a cent", async () => {
@@ -148,6 +155,8 @@ describe("parseExpense mode selection", () => {
       note: input.data,
       unresolvedNames: [],
       confidence: "low",
+      needsClarification: false,
+      clarificationExhausted: true,
     });
     expect(result.totalCents).not.toBe(23_800);
     expect(log).toHaveBeenCalledWith(
@@ -159,11 +168,92 @@ describe("parseExpense mode selection", () => {
     vi.stubEnv("MOCK_AI", "true");
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-    await parseExpense({ type: "text", data: "fixture" }, members);
+    await parseExpense({ type: "text", data: "fixture 123" }, members);
 
     expect(log).toHaveBeenCalledWith(
       '[parseExpense] branch=mock MOCK_AI="true"'
     );
+  });
+
+  it("blocks a short text without numbers before any model request", async () => {
+    vi.stubEnv("MOCK_AI", "false");
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const result = await parseExpense({ type: "text", data: "吃饭" }, members);
+
+    expect(result.needsClarification).toBe(true);
+    expect(result.clarificationQuestion).toBe("请补充金额等信息");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(
+      "[parseExpense] local-block reason=too-short,missing-number"
+    );
+  });
+
+  it("accumulates clarification context and stops after three answers", async () => {
+    vi.stubEnv("MOCK_AI", "false");
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
+    const fetchMock = vi.fn(
+      async (_request: string | URL | Request, _init?: RequestInit) => {
+        void _request;
+        void _init;
+        return new Response(
+        JSON.stringify({
+          output_text: JSON.stringify({
+            merchantName: null,
+            category: "交通",
+            totalYuan: 45,
+            taxYuan: null,
+            tipYuan: null,
+            items: null,
+            paidByMemberId: null,
+            participantMemberIds: [],
+            note: "昨天打车",
+            unresolvedNames: [],
+            confidence: "low",
+            needsClarification: true,
+            clarificationQuestion: "谁付款？",
+          }),
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    let result = await parseExpense(
+      { type: "text", data: "昨天打车45" },
+      members
+    );
+    expect(result.clarificationQuestion).toBe("这笔账是谁付款的？");
+
+    for (const answer of ["小李付的", "付款人是小李", "就是我付款"]) {
+      expect(result.clarificationContext).toBeDefined();
+      result = await parseExpense(
+        {
+          type: "clarification",
+          data: answer,
+          context: result.clarificationContext!,
+        },
+        members
+      );
+    }
+
+    expect(result.needsClarification).toBe(false);
+    expect(result.clarificationExhausted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const [lastRequest, lastInit] = fetchMock.mock.calls.at(-1) ?? [];
+    const lastBody = JSON.parse(
+      lastRequest instanceof Request
+        ? await lastRequest.clone().text()
+        : String(lastInit?.body ?? "{}")
+    );
+    expect(JSON.stringify(lastBody.input)).toContain("小李付的");
+    expect(JSON.stringify(lastBody.input)).toContain("付款人是小李");
+    expect(JSON.stringify(lastBody.input)).toContain("就是我付款");
   });
 
   it("returns API status and message as debugError in development", async () => {
@@ -239,8 +329,10 @@ describe("parseExpense mode selection", () => {
       vi.stubEnv("MOCK_AI", "false");
       vi.stubEnv("OPENAI_API_KEY", "test-key");
       const fetchMock = vi.fn(
-        async (_request: string | URL | Request, _init?: RequestInit) =>
-          new Response(
+        async (_request: string | URL | Request, _init?: RequestInit) => {
+          void _request;
+          void _init;
+          return new Response(
             JSON.stringify({
               output_text: JSON.stringify({
                 merchantName: null,
@@ -260,7 +352,8 @@ describe("parseExpense mode selection", () => {
               status: 200,
               headers: { "content-type": "application/json" },
             }
-          )
+          );
+        }
       );
       vi.stubGlobal("fetch", fetchMock);
       vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -321,7 +414,7 @@ describe("parseExpense mode selection", () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const result = await parseExpense(
-      { type: "text", data: "一笔说不清的消费" },
+      { type: "text", data: "一笔说不清的消费10" },
       members
     );
 

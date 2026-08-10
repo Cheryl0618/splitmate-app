@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ExpenseActions } from "@/components/expense-actions";
+import { PerspectiveInitial, PerspectiveName } from "@/components/perspective-name";
 import { formatCents } from "@/lib/format";
 import { getExpenseDetail } from "@/server/expenses";
 
@@ -57,7 +58,7 @@ export default async function ExpensePage({
               {expense.description}
             </h1>
             <p className="mt-5 text-4xl font-black tracking-tight">
-              {formatCents(expense.amountCents)}
+              {formatCents(expense.amountCents, expense.currency)}
             </p>
             <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-2">
               <div>
@@ -66,7 +67,12 @@ export default async function ExpensePage({
               </div>
               <div>
                 <dt className="text-slate-400">付款人</dt>
-                <dd className="mt-1 font-semibold">{expense.paidByName}</dd>
+                <dd className="mt-1 font-semibold">
+                  <PerspectiveName
+                    userId={expense.paidByUserId}
+                    displayName={expense.paidByName}
+                  />
+                </dd>
               </div>
             </dl>
           </header>
@@ -80,11 +86,13 @@ export default async function ExpensePage({
                 <div key={share.memberId} className="flex min-w-0 items-center justify-between gap-3 py-4">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">
-                      {share.displayName.slice(0, 1).toUpperCase()}
+                      <PerspectiveInitial userId={share.userId} displayName={share.displayName} />
                     </span>
-                    <span className="truncate font-semibold">{share.displayName}</span>
+                    <span className="truncate font-semibold">
+                      <PerspectiveName userId={share.userId} displayName={share.displayName} />
+                    </span>
                   </div>
-                  <span className="shrink-0 font-bold">{formatCents(share.amountCents)}</span>
+                  <span className="shrink-0 font-bold">{formatCents(share.amountCents, expense.currency)}</span>
                 </div>
               ))}
             </div>
@@ -97,8 +105,8 @@ export default async function ExpensePage({
               }`}
               role={sharesMatch ? undefined : "alert"}
             >
-              份额合计 {formatCents(shareTotalCents)} = 总额{" "}
-              {formatCents(expense.amountCents)}
+              份额合计 {formatCents(shareTotalCents, expense.currency)} = 总额{" "}
+              {formatCents(expense.amountCents, expense.currency)}
             </div>
           </section>
 

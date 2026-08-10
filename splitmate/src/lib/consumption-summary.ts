@@ -4,12 +4,12 @@ import {
   groupInsightsFixture,
   invalidInsightsFixture,
   relationshipInsightsFixture,
-} from "./__fixtures__/insights";
+} from "./__fixtures__/consumption-summary";
 import type { GroupStats } from "./group-stats";
 import { requestStructuredOutput } from "./parse-expense";
 import type { RelationshipStats } from "./relationship";
 
-export type InsightKind = "trend" | "pattern" | "suggestion" | "anomaly";
+export type InsightKind = "fact" | "trend";
 export type InsightType = "group" | "relationship";
 
 export interface Insight {
@@ -18,16 +18,11 @@ export interface Insight {
   relatedCents?: number;
 }
 
-const INSIGHT_KINDS = new Set<InsightKind>([
-  "trend",
-  "pattern",
-  "suggestion",
-  "anomaly",
-]);
+const INSIGHT_KINDS = new Set<InsightKind>(["fact", "trend"]);
 
 const INSIGHTS_RESPONSE_FORMAT: ResponseFormatTextJSONSchemaConfig = {
   type: "json_schema",
-  name: "expense_insights",
+  name: "expense_summary",
   strict: true,
   description: "Up to four factual insights based only on aggregate expense statistics.",
   schema: {
@@ -48,7 +43,7 @@ const INSIGHTS_RESPONSE_FORMAT: ResponseFormatTextJSONSchemaConfig = {
             },
             kind: {
               type: "string",
-              enum: ["trend", "pattern", "suggestion", "anomaly"],
+              enum: ["fact", "trend"],
             },
             relatedCents: {
               type: ["integer", "null"],
@@ -151,16 +146,21 @@ function buildPrompt(stats: GroupStats | RelationshipStats, type: InsightType) {
     : relationshipPayload(stats as RelationshipStats);
 
   return [
-    "你是共享记账产品的消费洞察编辑。",
-    "只根据下方聚合统计生成 2 到 4 条中文洞察，并按重要性排序。",
+    "你是共享记账产品的消费总结编辑。",
+    "只根据下方聚合统计生成 2 到 4 条中文客观总结，并按重要性排序。",
     "每条 text 不超过 40 个汉字，使用第二人称“你们”，不要使用“用户”。",
-    "只陈述数据直接支持的事实，不推测原因，不使用评判性语言。",
-    "关系洞察必须保持中立，不暗示任何一方付出更多或更值得肯定。",
+    "只陈述数据直接支持的事实或变化趋势，不推测任何原因。",
+    "禁止任何建议，例如“可以考虑”或“建议你们”。",
+    "禁止任何评价，例如“偏高”“过多”“不太合理”。",
+    "禁止判断分账是否公平，也禁止评论任何个人的消费习惯。",
+    "关系总结必须保持中立，不暗示任何一方更值得肯定。",
     "所有数字必须逐字取自输入，不得自行计算、推导、四舍五入或编造。",
     "金额一律写成 ¥123.45 形式，保留两位小数。",
     "relatedCents 只能原样复制 allowedRelatedCents 中的整数；没有合适金额就返回 null。",
-    "好例子：你们最近三个月咖啡消费 ¥820.00，比上季度高 62%。",
-    "坏例子：你们在咖啡上花得有点多，可以考虑控制一下。",
+    "好例子：你们最近三个月共 42 笔支出，合计 ¥3820.00。",
+    "好例子：你们本月支出比上月减少 ¥520.00。",
+    "坏例子：你们在咖啡上花得较多，可以考虑控制。",
+    "坏例子：你承担的比例偏高。",
     `统计类型：${type}`,
     `聚合统计：${JSON.stringify(payload)}`,
   ].join("\n");
@@ -197,7 +197,7 @@ export function normalizeInsights(
       ...(hasValidRelatedCents ? { relatedCents: relatedCents as number } : {}),
     });
   }
-  return insights;
+  return insights.length >= 2 ? insights : [];
 }
 
 function allowedCents(stats: GroupStats | RelationshipStats, type: InsightType) {
@@ -219,7 +219,7 @@ export async function generateInsights(
       : await requestStructuredOutput(buildPrompt(stats, type), INSIGHTS_RESPONSE_FORMAT);
     return normalizeInsights(response, allowedCents(stats, type));
   } catch (error) {
-    console.error("[generateInsights] failed", { type, error });
+    console.error("[generateConsumptionSummary] failed", { type, error });
     return [];
   }
 }

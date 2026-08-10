@@ -12,6 +12,12 @@ import {
   type ExpenseInput,
 } from "@/lib/expense-input";
 import { formatCents } from "@/lib/format";
+import { currencySymbols } from "@/lib/currency";
+import {
+  MAX_AI_INPUT_LENGTH,
+  MAX_AMOUNT_CENTS,
+  MAX_DESCRIPTION_LENGTH,
+} from "@/lib/limits";
 import { calculateItemizedShares } from "@/lib/itemized-shares";
 import type {
   ParsedExpense,
@@ -173,6 +179,7 @@ export function ExpenseForm({
   const [isParsing, setIsParsing] = useState(false);
   const [parseResult, setParseResult] = useState<ParsedExpense | null>(null);
   const [parseNotice, setParseNotice] = useState("");
+  const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [itemRows, setItemRows] = useState<EditableExpenseItem[] | null>(null);
   const [taxInput, setTaxInput] = useState("0.00");
@@ -254,9 +261,19 @@ export function ExpenseForm({
         : `超出 ${formatPercentage(Math.abs(percentageDifference))}%`
       : method === "amount" && amountDifferenceCents !== 0
         ? amountDifferenceCents > 0
-          ? `还差 ${formatCents(amountDifferenceCents)}`
-          : `超出 ${formatCents(Math.abs(amountDifferenceCents))}`
+          ? `还差 ${formatCents(amountDifferenceCents, group.currency)}`
+          : `超出 ${formatCents(Math.abs(amountDifferenceCents), group.currency)}`
         : "";
+  const amountLimitError =
+    amountCents > MAX_AMOUNT_CENTS ? "单笔账单金额不能超过一百万元" : "";
+  const descriptionLimitError =
+    Array.from(description).length > MAX_DESCRIPTION_LENGTH
+      ? `账单标题不能超过 ${MAX_DESCRIPTION_LENGTH} 个字符`
+      : "";
+  const aiInputLimitError =
+    Array.from(textInput).length > MAX_AI_INPUT_LENGTH
+      ? `AI 输入不能超过 ${MAX_AI_INPUT_LENGTH} 个字符`
+      : "";
   const canSubmit =
     amountCents > 0 &&
     description.trim().length > 0 &&
@@ -265,6 +282,9 @@ export function ExpenseForm({
     participants.length > 0 &&
     calculatedShares !== null &&
     !allocationError &&
+    !amountLimitError &&
+    !descriptionLimitError &&
+    !parseResult?.needsClarification &&
     !isSubmitting;
 
   const recognizedDifferenceCents = itemizedResult
@@ -307,8 +327,10 @@ export function ExpenseForm({
     }
     if (parsedDescription) {
       setDescription(parsedDescription);
-    } else if (input.type === "text") {
-      setDescription(input.data);
+    } else {
+      const originalInput =
+        input.type === "clarification" ? input.context.originalInput : input;
+      if (originalInput.type === "text") setDescription(originalInput.data);
     }
     if (result.paidByMemberId && memberIds.has(result.paidByMemberId)) {
       setPaidBy(result.paidByMemberId);
@@ -334,10 +356,17 @@ export function ExpenseForm({
       setMethod("equal");
     }
     setParseNotice(
-      result.confidence === "low"
+      result.validationError
+        ? result.validationError
+        : result.needsClarification
+          ? "还需要确认一项信息，回答后会继续补全结果。"
+          : result.clarificationExhausted
+            ? "连续追问 3 轮后信息仍不完整，已降级到手动录入。"
+            : result.confidence === "low"
         ? "识别失败或结果不完整，已降级到手动录入。"
         : "解析完成，请核对后再创建账单。"
     );
+    setClarificationAnswer("");
   }
 
   async function requestParse(input: ParseExpenseInput) {
@@ -367,6 +396,8 @@ export function ExpenseForm({
           note: input.type === "text" ? input.data : undefined,
           unresolvedNames: [],
           confidence: "low",
+          needsClarification: false,
+          clarificationExhausted: true,
         },
         input
       );
@@ -391,6 +422,8 @@ export function ExpenseForm({
         participantMemberIds: [],
         unresolvedNames: [],
         confidence: "low",
+        needsClarification: false,
+        clarificationExhausted: true,
       });
       setParseNotice("图片读取失败，已降级到手动录入。");
       setIsParsing(false);
@@ -506,7 +539,7 @@ export function ExpenseForm({
               />
               <button
                 type="button"
-                disabled={isParsing || !textInput.trim()}
+                disabled={isParsing || !textInput.trim() || Boolean(aiInputLimitError)}
                 onClick={() =>
                   void requestParse({ type: "text", data: textInput.trim() })
                 }
@@ -515,6 +548,12 @@ export function ExpenseForm({
                 解析这句话
               </button>
             </div>
+
+            {aiInputLimitError ? (
+              <p className="mt-2 text-sm font-semibold text-rose-600" role="alert">
+                {aiInputLimitError}
+              </p>
+            ) : null}
 
             {parseNotice ? (
               <div
@@ -531,6 +570,50 @@ export function ExpenseForm({
                   <span className="mr-2 inline-block h-3 w-3 animate-pulse rounded-full bg-teal-500" />
                 ) : null}
                 {parseNotice}
+              </div>
+            ) : null}
+
+            {parseResult?.needsClarification &&
+            parseResult.clarificationQuestion &&
+            parseResult.clarificationContext ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <p className="font-bold text-amber-950">
+                  {parseResult.clarificationQuestion}
+                </p>
+                <p className="mt-1 text-xs font-medium text-amber-700">
+                  第 {parseResult.clarificationContext.history.length + 1} / 3 轮追问
+                </p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    value={clarificationAnswer}
+                    onChange={(event) => setClarificationAnswer(event.target.value)}
+                    placeholder="补充这项信息"
+                    className="min-w-0 flex-1 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none focus:border-amber-500"
+                  />
+                  <button
+                    type="button"
+                    disabled={
+                      isParsing ||
+                      !clarificationAnswer.trim() ||
+                      Array.from(clarificationAnswer).length > MAX_AI_INPUT_LENGTH
+                    }
+                    onClick={() =>
+                      void requestParse({
+                        type: "clarification",
+                        data: clarificationAnswer.trim(),
+                        context: parseResult.clarificationContext!,
+                      })
+                    }
+                    className="rounded-xl bg-amber-600 px-4 py-3 text-sm font-bold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    提交回答
+                  </button>
+                </div>
+                {Array.from(clarificationAnswer).length > MAX_AI_INPUT_LENGTH ? (
+                  <p className="mt-2 text-sm font-semibold text-rose-600" role="alert">
+                    回答不能超过 {MAX_AI_INPUT_LENGTH} 个字符
+                  </p>
+                ) : null}
               </div>
             ) : null}
 
@@ -554,7 +637,7 @@ export function ExpenseForm({
           onSubmit={handleSubmit}
           className="min-w-0 space-y-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_16px_50px_rgba(15,23,42,0.06)] sm:p-8"
         >
-          {parseResult?.confidence === "low" ? (
+          {parseResult?.confidence === "low" && !parseResult.needsClarification ? (
             <p
               className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 font-semibold text-amber-900"
               role="alert"
@@ -604,7 +687,7 @@ export function ExpenseForm({
                       <option value="">请选择对应成员</option>
                       {group.members.map((member) => (
                         <option key={member.id} value={member.id}>
-                          {member.displayName}
+                          {member.userId === currentUserId ? "你" : member.displayName}
                         </option>
                       ))}
                     </select>
@@ -613,12 +696,31 @@ export function ExpenseForm({
               </div>
             </section>
           ) : null}
+
+          <div>
+            <label htmlFor="description" className="text-sm font-bold text-slate-700">
+              标题
+            </label>
+            <input
+              id="description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="例如：周末超市采购"
+              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+            />
+            {descriptionLimitError ? (
+              <p className="mt-2 text-sm font-semibold text-rose-600" role="alert">
+                {descriptionLimitError}
+              </p>
+            ) : null}
+          </div>
+
           <div>
             <label htmlFor="amount" className="text-sm font-bold text-slate-700">
-              金额（元）
+              金额（{group.currency}）
             </label>
             <div className="mt-2 flex items-center rounded-2xl border border-slate-200 px-4 focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100">
-              <span className="text-xl font-bold text-slate-400">¥</span>
+              <span className="text-xl font-bold text-slate-400">{currencySymbols[group.currency]}</span>
               <input
                 id="amount"
                 inputMode="decimal"
@@ -636,33 +738,24 @@ export function ExpenseForm({
             {amountNotice ? (
               <p className="mt-2 text-sm font-medium text-amber-700">{amountNotice}</p>
             ) : null}
+            {amountLimitError ? (
+              <p className="mt-2 text-sm font-semibold text-rose-600" role="alert">
+                {amountLimitError}
+              </p>
+            ) : null}
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2">
-            <div>
-              <label htmlFor="description" className="text-sm font-bold text-slate-700">
-                说明
-              </label>
-              <input
-                id="description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="例如：周末超市采购"
-                className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
-              />
-            </div>
-            <div>
-              <label htmlFor="date" className="text-sm font-bold text-slate-700">
-                日期
-              </label>
-              <input
-                id="date"
-                type="date"
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
-                className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
-              />
-            </div>
+          <div>
+            <label htmlFor="date" className="text-sm font-bold text-slate-700">
+              日期
+            </label>
+            <input
+              id="date"
+              type="date"
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+            />
           </div>
 
           <div>
@@ -695,7 +788,7 @@ export function ExpenseForm({
             >
               {group.members.map((member) => (
                 <option key={member.id} value={member.id}>
-                  {member.displayName}
+                  {member.userId === currentUserId ? "你" : member.displayName}
                 </option>
               ))}
             </select>
@@ -779,7 +872,7 @@ export function ExpenseForm({
                                 onChange={() => toggleItemMember(item.id, member.id)}
                                 className="sr-only"
                               />
-                              {member.displayName}
+                              {member.userId === currentUserId ? "你" : member.displayName}
                             </label>
                           );
                         })}
@@ -791,13 +884,13 @@ export function ExpenseForm({
 
               <div className="grid gap-4 sm:grid-cols-2">
                 {([
-                  ["税费（元）", taxInput, setTaxInput],
-                  ["小费（元）", tipInput, setTipInput],
+                  [`税费（${group.currency}）`, taxInput, setTaxInput],
+                  [`小费（${group.currency}）`, tipInput, setTipInput],
                 ] as const).map(([label, value, setter]) => (
                   <label key={label} className="text-sm font-bold text-slate-700">
                     {label}
                     <span className="mt-2 flex rounded-2xl border border-slate-200 px-4 py-3 focus-within:border-teal-500">
-                      <span className="text-slate-400">¥</span>
+                      <span className="text-slate-400">{currencySymbols[group.currency]}</span>
                       <input
                         inputMode="decimal"
                         value={value}
@@ -812,13 +905,13 @@ export function ExpenseForm({
               {itemizedResult ? (
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
                   <p className="font-semibold">
-                    商品、税费与小费合计 {formatCents(itemizedResult.recognizedTotalCents)}；
+                    商品、税费与小费合计 {formatCents(itemizedResult.recognizedTotalCents, group.currency)}；
                     税费和小费已按每人商品小计比例分摊。
                   </p>
                   {recognizedDifferenceCents !== 0 ? (
                     <p className="mt-2 font-bold text-amber-700" role="status">
                       与识别总额{recognizedDifferenceCents > 0 ? "还差" : "超出"}{" "}
-                      {formatCents(Math.abs(recognizedDifferenceCents))}，请核对；不阻断提交。
+                      {formatCents(Math.abs(recognizedDifferenceCents), group.currency)}，请核对；不阻断提交。
                     </p>
                   ) : null}
                 </div>
@@ -846,7 +939,9 @@ export function ExpenseForm({
                           onChange={() => toggleMember(member.id)}
                           className="h-4 w-4 accent-teal-600"
                         />
-                        <span className="font-semibold">{member.displayName}</span>
+                        <span className="font-semibold">
+                          {member.userId === currentUserId ? "你" : member.displayName}
+                        </span>
                       </label>
                     );
                   })}
@@ -898,15 +993,17 @@ export function ExpenseForm({
                         key={member.id}
                         className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0 sm:gap-4 sm:px-4"
                       >
-                        <span className="font-semibold">{member.displayName}</span>
+                        <span className="font-semibold">
+                          {member.userId === currentUserId ? "你" : member.displayName}
+                        </span>
                         {method === "equal" ? (
-                          <span className="font-bold">{formatCents(previewCents)}</span>
+                          <span className="font-bold">{formatCents(previewCents, group.currency)}</span>
                         ) : method === "percentage" ? (
                           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                             <label className="flex items-center rounded-xl border border-slate-200 px-3 py-2">
                               <input
                                 inputMode="decimal"
-                                aria-label={`${member.displayName}的百分比`}
+                                aria-label={`${member.userId === currentUserId ? "你" : member.displayName}的百分比`}
                                 value={percentageInputs[member.id] ?? ""}
                                 onChange={(event) =>
                                   setPercentageInputs((current) => ({
@@ -919,15 +1016,15 @@ export function ExpenseForm({
                               <span className="ml-1 text-slate-400">%</span>
                             </label>
                             <span className="w-18 text-right text-sm font-semibold text-slate-500 sm:w-20">
-                              {formatCents(previewCents)}
+                              {formatCents(previewCents, group.currency)}
                             </span>
                           </div>
                         ) : (
                           <label className="flex items-center rounded-xl border border-slate-200 px-3 py-2">
-                            <span className="text-slate-400">¥</span>
+                            <span className="text-slate-400">{currencySymbols[group.currency]}</span>
                             <input
                               inputMode="decimal"
-                              aria-label={`${member.displayName}承担的金额`}
+                              aria-label={`${member.userId === currentUserId ? "你" : member.displayName}承担的金额`}
                               value={amountInputs[member.id] ?? ""}
                               onChange={(event) => {
                                 const parsed = parseYuanInput(event.target.value);
@@ -954,10 +1051,10 @@ export function ExpenseForm({
                 </p>
               ) : method === "amount" ? (
                 <p className="text-sm font-semibold text-slate-600">
-                  已分配 {formatCents(assignedAmountCents)} / 总额{" "}
-                  {formatCents(amountCents)} /{" "}
+                  已分配 {formatCents(assignedAmountCents, group.currency)} / 总额{" "}
+                  {formatCents(amountCents, group.currency)} /{" "}
                   {amountDifferenceCents >= 0 ? "还差" : "超出"}{" "}
-                  {formatCents(Math.abs(amountDifferenceCents))}
+                  {formatCents(Math.abs(amountDifferenceCents), group.currency)}
                 </p>
               ) : null}
             </>
