@@ -1,4 +1,5 @@
 import { openDatabase } from "@/server/database";
+import type { ExpenseCategory } from "@/lib/expense-input";
 import type { SplitMethod } from "@/lib/split";
 
 export interface ExpenseFormMember {
@@ -23,6 +24,7 @@ export interface ExpenseDetailData {
   paidByMemberId: string;
   paidByName: string;
   createdById: string;
+  category: ExpenseCategory;
   splitMethod: SplitMethod;
   settled: boolean;
   photoUrls: string[];
@@ -43,6 +45,7 @@ interface ExpenseRow {
   paidByMemberId: string;
   paidByName: string;
   createdById: string;
+  category: ExpenseCategory;
   splitMethod: "EQUAL" | "WEIGHTED" | "EXACT";
   settled: number;
   photoUrls: string | null;
@@ -118,6 +121,7 @@ export function getExpenseDetail(expenseId: string): ExpenseDetailData | null {
                 expense.date,
                 expense.paidBy AS paidByMemberId,
                 expense.createdById,
+                expense.category,
                 expense.splitMethod,
                 expense.settled,
                 expense.photoUrls,
@@ -151,6 +155,7 @@ export function getExpenseDetail(expenseId: string): ExpenseDetailData | null {
       paidByMemberId: expense.paidByMemberId,
       paidByName: expense.paidByName,
       createdById: expense.createdById,
+      category: expense.category,
       splitMethod: splitMethodFromDatabase(expense.splitMethod),
       settled: Boolean(expense.settled),
       photoUrls: parsePhotoUrls(expense.photoUrls),

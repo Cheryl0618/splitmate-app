@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import type { ExpenseInput } from "@/lib/expense-input";
+import {
+  expenseCategories,
+  type ExpenseCategory,
+  type ExpenseInput,
+} from "@/lib/expense-input";
 import {
   calculateShares,
   type SplitMethod,
@@ -40,6 +44,12 @@ function parseInput(value: unknown): ExpenseInput {
   if (!Array.isArray(input.participants)) {
     throw new ExpenseMutationError("请选择参与成员", 400);
   }
+  if (
+    typeof input.category !== "string" ||
+    !expenseCategories.includes(input.category as ExpenseCategory)
+  ) {
+    throw new ExpenseMutationError("账单分类无效", 400);
+  }
 
   const participants: SplitParticipant[] = input.participants.map((item) => {
     if (!item || typeof item !== "object") {
@@ -65,6 +75,7 @@ function parseInput(value: unknown): ExpenseInput {
     description: typeof input.description === "string" ? input.description.trim() : "",
     date: typeof input.date === "string" ? input.date : "",
     paidBy: typeof input.paidBy === "string" ? input.paidBy : "",
+    category: input.category as ExpenseCategory,
     method: method as SplitMethod,
     participants,
     photoUrls: Array.isArray(input.photoUrls)
@@ -166,7 +177,7 @@ export function createExpense(
         `INSERT INTO "Expense" (
           id, groupId, description, amountCents, paidBy, createdById, date,
           splitMethod, category, settled, tripId, location, photoUrls, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?)`
       )
       .run(
         expenseId,
@@ -177,6 +188,7 @@ export function createExpense(
         currentUserId,
         date,
         splitMethodForDatabase(input.method),
+        input.category,
         input.photoUrls?.length ? JSON.stringify(input.photoUrls) : null,
         now,
         now
@@ -238,7 +250,7 @@ export function updateExpense(
     writable
       .prepare(
         `UPDATE "Expense"
-         SET description = ?, amountCents = ?, paidBy = ?, date = ?, splitMethod = ?, updatedAt = ?
+         SET description = ?, amountCents = ?, paidBy = ?, date = ?, splitMethod = ?, category = ?, updatedAt = ?
          WHERE id = ?`
       )
       .run(
@@ -247,6 +259,7 @@ export function updateExpense(
         input.paidBy,
         date,
         splitMethodForDatabase(input.method),
+        input.category,
         Date.now(),
         expenseId
       );

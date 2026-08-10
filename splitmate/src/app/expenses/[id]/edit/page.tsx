@@ -20,6 +20,7 @@ export default async function EditExpensePage({
     description: expense.description,
     date: expense.date.slice(0, 10),
     paidBy: expense.paidByMemberId,
+    category: expense.category,
     method: expense.splitMethod,
     shares: expense.shares,
   };

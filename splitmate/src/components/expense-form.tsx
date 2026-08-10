@@ -6,7 +6,11 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { useCurrentUser } from "@/lib/current-user";
-import type { ExpenseInput } from "@/lib/expense-input";
+import {
+  expenseCategories,
+  type ExpenseCategory,
+  type ExpenseInput,
+} from "@/lib/expense-input";
 import { formatCents } from "@/lib/format";
 import { calculateItemizedShares } from "@/lib/itemized-shares";
 import type {
@@ -26,6 +30,7 @@ export interface ExpenseFormInitialValue {
   description: string;
   date: string;
   paidBy: string;
+  category: ExpenseCategory;
   method: SplitMethod;
   shares: Array<{ memberId: string; amountCents: number }>;
 }
@@ -138,6 +143,9 @@ export function ExpenseForm({
   const [date, setDate] = useState(initialValue?.date ?? todayInputValue());
   const [paidBy, setPaidBy] = useState(
     initialValue?.paidBy ?? currentMember?.id ?? group.members[0]?.id ?? ""
+  );
+  const [category, setCategory] = useState<ExpenseCategory>(
+    initialValue?.category ?? "其他"
   );
   const [method, setMethod] = useState<SplitMethod>(initialValue?.method ?? "equal");
   const [selectedMemberIds, setSelectedMemberIds] = useState(initialMemberIds);
@@ -368,6 +376,8 @@ export function ExpenseForm({
 
   async function handleImageFile(file: File | undefined) {
     if (!file) return;
+    setIsParsing(true);
+    setParseNotice("正在读取收据图片…");
     try {
       const data = await readImage(file);
       setPhotoUrls([data]);
@@ -380,6 +390,7 @@ export function ExpenseForm({
         confidence: "low",
       });
       setParseNotice("图片读取失败，已降级到手动录入。");
+      setIsParsing(false);
     }
   }
 
@@ -409,6 +420,7 @@ export function ExpenseForm({
       description: description.trim(),
       date,
       paidBy,
+      category,
       method: itemRows ? "amount" : method,
       participants,
       photoUrls: initialValue ? undefined : photoUrls,
@@ -439,7 +451,7 @@ export function ExpenseForm({
 
   return (
     <main className="min-h-screen bg-[#f6f8f7] text-slate-900">
-      <div className="mx-auto max-w-3xl px-5 py-6 sm:px-8 lg:px-12">
+      <div className="mx-auto max-w-3xl px-4 py-6 sm:px-8 lg:px-12">
         <Link
           href={initialValue ? `/expenses/${initialValue.id}` : `/groups/${group.id}`}
           className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-teal-700"
@@ -537,7 +549,7 @@ export function ExpenseForm({
 
         <form
           onSubmit={handleSubmit}
-          className="space-y-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_16px_50px_rgba(15,23,42,0.06)] sm:p-8"
+          className="min-w-0 space-y-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_16px_50px_rgba(15,23,42,0.06)] sm:p-8"
         >
           {parseResult?.confidence === "low" ? (
             <p
@@ -636,6 +648,24 @@ export function ExpenseForm({
                 className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
               />
             </div>
+          </div>
+
+          <div>
+            <label htmlFor="category" className="text-sm font-bold text-slate-700">
+              分类
+            </label>
+            <select
+              id="category"
+              value={category}
+              onChange={(event) => setCategory(event.target.value as ExpenseCategory)}
+              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+            >
+              {expenseCategories.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -851,13 +881,13 @@ export function ExpenseForm({
                     return (
                       <div
                         key={member.id}
-                        className="grid grid-cols-[1fr_auto] items-center gap-4 border-b border-slate-100 px-4 py-3 last:border-b-0"
+                        className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0 sm:gap-4 sm:px-4"
                       >
                         <span className="font-semibold">{member.displayName}</span>
                         {method === "equal" ? (
                           <span className="font-bold">{formatCents(previewCents)}</span>
                         ) : method === "percentage" ? (
-                          <div className="flex items-center gap-3">
+                          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                             <label className="flex items-center rounded-xl border border-slate-200 px-3 py-2">
                               <input
                                 inputMode="decimal"
@@ -869,11 +899,11 @@ export function ExpenseForm({
                                     [member.id]: event.target.value.replace(/[^\d.]/g, ""),
                                   }))
                                 }
-                                className="w-16 bg-transparent text-right font-semibold outline-none"
+                                className="w-12 bg-transparent text-right font-semibold outline-none sm:w-16"
                               />
                               <span className="ml-1 text-slate-400">%</span>
                             </label>
-                            <span className="w-20 text-right text-sm font-semibold text-slate-500">
+                            <span className="w-18 text-right text-sm font-semibold text-slate-500 sm:w-20">
                               {formatCents(previewCents)}
                             </span>
                           </div>
@@ -891,7 +921,7 @@ export function ExpenseForm({
                                   [member.id]: parsed.value,
                                 }));
                               }}
-                              className="ml-1 w-24 bg-transparent text-right font-semibold outline-none"
+                              className="ml-1 w-20 bg-transparent text-right font-semibold outline-none sm:w-24"
                             />
                           </label>
                         )}

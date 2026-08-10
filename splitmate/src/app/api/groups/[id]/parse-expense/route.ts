@@ -24,11 +24,13 @@ export async function POST(
     return Response.json({ error: "解析内容不能为空" }, { status: 400 });
   }
 
+  const currentUserId = request.headers.get("x-demo-user-id")?.trim() ?? "";
   const parsed = await parseExpense(
     input,
-    group.members.map(({ id: memberId, displayName }) => ({
+    group.members.map(({ id: memberId, userId, displayName }) => ({
       id: memberId,
       displayName,
+      isCurrentUser: userId === currentUserId,
     }))
   );
   return Response.json(parsed);

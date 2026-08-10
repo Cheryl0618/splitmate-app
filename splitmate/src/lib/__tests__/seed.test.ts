@@ -38,4 +38,35 @@ describe("home group seed data", () => {
     expect(greedySettle(balances)).toHaveLength(4);
     expect(optimalSettle(balances)).toHaveLength(3);
   });
+
+  it("covers one year with dense, deliberately uneven demo activity", () => {
+    const months = new Set(homeGroupSeed.expenses.map((expense) => expense.date.slice(0, 7)));
+    const payerCounts = homeGroupSeed.expenses.reduce<Record<string, number>>(
+      (counts, expense) => ({
+        ...counts,
+        [expense.paidBy]: (counts[expense.paidBy] ?? 0) + 1,
+      }),
+      {}
+    );
+    const categoryTotals = homeGroupSeed.expenses.reduce<Record<string, number>>(
+      (totals, expense) => ({
+        ...totals,
+        [expense.category]: (totals[expense.category] ?? 0) + expense.amountCents,
+      }),
+      {}
+    );
+
+    expect(homeGroupSeed.expenses.length).toBeGreaterThanOrEqual(100);
+    expect(homeGroupSeed.expenses.length).toBeLessThanOrEqual(130);
+    expect(homeGroupSeed.settlements.length).toBeGreaterThanOrEqual(30);
+    expect(homeGroupSeed.settlements.length).toBeLessThanOrEqual(40);
+    expect(months.size).toBe(12);
+    expect(payerCounts["member-home-xiaoli"]).toBeGreaterThan(
+      payerCounts["member-home-xiaowang"]
+    );
+    expect(payerCounts["member-home-tom"]).toBeGreaterThan(
+      payerCounts["member-home-lucy"]
+    );
+    expect(categoryTotals["住宿"]).toBeGreaterThan(categoryTotals["超市"] * 5);
+  });
 });

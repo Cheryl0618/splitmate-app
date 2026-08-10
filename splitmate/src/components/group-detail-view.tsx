@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { EmptyState } from "@/components/empty-state";
 import { UserSwitcher } from "@/components/user-switcher";
 import { useCurrentUser } from "@/lib/current-user";
 import { formatCents } from "@/lib/format";
@@ -49,14 +50,20 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
     (total, balance) => total + balance.amountCents,
     0
   );
+  const hasCurrentParticipation = Boolean(
+    currentMember &&
+      group.expenses.some((expense) =>
+        expense.shares.some((share) => share.memberId === currentMember.id)
+      )
+  );
 
   return (
     <main className="min-h-screen bg-[#f6f8f7] text-slate-900">
-      <div className="mx-auto max-w-5xl px-5 py-6 sm:px-8 lg:px-12">
-        <header className="flex items-center justify-between gap-4">
+      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 lg:px-12">
+        <header className="flex items-center justify-between gap-3">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-teal-700"
+            className="inline-flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-slate-500 hover:text-teal-700"
           >
             <span aria-hidden="true">←</span>
             所有群组
@@ -102,11 +109,13 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
             {orderedBalances.map((balance) => {
               const isCurrent = balance.userId === currentUserId;
               return (
-                <div
+                <Link
                   key={balance.memberId}
-                  className={`flex items-center justify-between border-b border-slate-100 px-5 py-4 last:border-b-0 ${
-                    isCurrent ? "bg-teal-50/80" : ""
+                  href={`/groups/${group.id}/members/${balance.memberId}`}
+                  className={`flex items-center justify-between border-b border-slate-100 px-5 py-4 transition-colors last:border-b-0 ${
+                    isCurrent ? "bg-teal-50/80" : "hover:bg-slate-50"
                   }`}
+                  aria-label={`查看与${balance.displayName}的关系画像`}
                 >
                   <div className="flex items-center gap-3">
                     <span
@@ -126,7 +135,7 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
                     </div>
                   </div>
                   <BalanceAmount amountCents={balance.amountCents} />
-                </div>
+                </Link>
               );
             })}
           </div>
@@ -148,8 +157,24 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
             </Link>
           </div>
 
-          <div className="space-y-8">
-            {groupExpensesByDate(group.expenses).map(([date, expenses]) => (
+          {group.expenses.length === 0 ? (
+            <EmptyState
+              title="这个群组还没有账单"
+              description="先记下第一笔共同支出，成员余额和结算方案就会自动出现在这里。"
+              actionHref={`/groups/${group.id}/expenses/new`}
+              actionLabel="记录第一笔账单"
+            />
+          ) : (
+            <div className="space-y-8">
+              {currentMember && !hasCurrentParticipation ? (
+                <EmptyState
+                  title="你还没有参与任何账单"
+                  description="群组里已经有账单，但目前都没有分摊给你。记一笔并选择自己参与，之后这里就会显示你的支出。"
+                  actionHref={`/groups/${group.id}/expenses/new`}
+                  actionLabel="记下我的第一笔"
+                />
+              ) : null}
+              {groupExpensesByDate(group.expenses).map(([date, expenses]) => (
               <div key={date}>
                 <h3 className="mb-3 text-sm font-bold text-slate-500">
                   {formatDate(`${date}T00:00:00.000Z`)}
@@ -165,7 +190,7 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
                       <Link
                         key={expense.id}
                         href={`/expenses/${expense.id}`}
-                        className={`grid gap-3 border-b border-slate-100 px-5 py-4 transition-colors last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-center ${
+                        className={`grid min-w-0 gap-3 border-b border-slate-100 px-4 py-4 transition-colors last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-5 ${
                           isParticipating
                             ? "hover:bg-slate-50"
                             : "bg-slate-50/70 text-slate-400 hover:bg-slate-100"
@@ -190,7 +215,7 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
                             {expense.paidByName} 付款 · 总额 {formatCents(expense.amountCents)}
                           </p>
                         </div>
-                        <div className="sm:text-right">
+                        <div className="min-w-0 sm:text-right">
                           <p className="text-xs text-slate-400">我这笔出了多少</p>
                           <p className="mt-1 font-bold">
                             {isParticipating && myShare
@@ -203,8 +228,9 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
                   })}
                 </div>
               </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </main>

@@ -1,10 +1,16 @@
+import OpenAI from "openai";
+
 import { parseFailureFixture } from "./__fixtures__/parse-failure";
 import { receiptFixture } from "./__fixtures__/receipt";
 import { textExpenseFixture } from "./__fixtures__/text-expense";
 
+const OPENAI_MODEL = "gpt-5.6-terra";
+const OPENAI_TIMEOUT_MS = 10_000;
+
 export interface Member {
   id: string;
   displayName: string;
+  isCurrentUser?: boolean;
 }
 
 export interface ParsedExpenseItem {
@@ -31,23 +37,113 @@ export type ParseExpenseInput =
   | { type: "text"; data: string };
 
 interface ModelExpenseItem {
-  name?: unknown;
-  priceYuan?: unknown;
-  memberIds?: unknown;
+  name: string;
+  priceYuan: number;
+  memberIds: string[];
 }
 
 interface ModelExpense {
-  merchantName?: unknown;
-  totalYuan?: unknown;
-  taxYuan?: unknown;
-  tipYuan?: unknown;
-  items?: unknown;
-  paidByMemberId?: unknown;
-  participantMemberIds?: unknown;
-  note?: unknown;
-  unresolvedNames?: unknown;
-  confidence?: unknown;
+  merchantName: string | null;
+  totalYuan: number | null;
+  taxYuan: number | null;
+  tipYuan: number | null;
+  items: ModelExpenseItem[] | null;
+  paidByMemberId: string | null;
+  participantMemberIds: string[];
+  note: string | null;
+  unresolvedNames: string[];
+  confidence: "high" | "low";
 }
+
+const EXPENSE_RESPONSE_FORMAT = {
+  type: "json_schema" as const,
+  name: "parsed_expense",
+  strict: true,
+  description: "A shared expense extracted from either an image or text.",
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      merchantName: {
+        type: ["string", "null"],
+        description: "Merchant or venue name, or null when it cannot be identified.",
+      },
+      totalYuan: {
+        type: ["number", "null"],
+        description: "Total expense amount in yuan, not cents; null when unresolved.",
+      },
+      taxYuan: {
+        type: ["number", "null"],
+        description: "Tax amount in yuan, not cents; null when absent or unresolved.",
+      },
+      tipYuan: {
+        type: ["number", "null"],
+        description: "Tip amount in yuan, not cents; null when absent or unresolved.",
+      },
+      items: {
+        anyOf: [
+          {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                name: { type: "string", description: "Recognized item name." },
+                priceYuan: {
+                  type: "number",
+                  description: "Recognized item price in yuan, not cents.",
+                },
+                memberIds: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "IDs of matched members who consumed this item.",
+                },
+              },
+              required: ["name", "priceYuan", "memberIds"],
+            },
+          },
+          { type: "null" },
+        ],
+        description: "Receipt line items, or null when the input has no itemization.",
+      },
+      paidByMemberId: {
+        type: ["string", "null"],
+        description: "Matched payer member ID, or null when unresolved.",
+      },
+      participantMemberIds: {
+        type: "array",
+        items: { type: "string" },
+        description: "Matched member IDs participating in the expense.",
+      },
+      note: {
+        type: ["string", "null"],
+        description: "Concise editable note preserving relevant expense details.",
+      },
+      unresolvedNames: {
+        type: "array",
+        items: { type: "string" },
+        description: "Names mentioned in the input that do not match any member.",
+      },
+      confidence: {
+        type: "string",
+        enum: ["high", "low"],
+        description: "Low when any important expense field is uncertain.",
+      },
+    },
+    required: [
+      "merchantName",
+      "totalYuan",
+      "taxYuan",
+      "tipYuan",
+      "items",
+      "paidByMemberId",
+      "participantMemberIds",
+      "note",
+      "unresolvedNames",
+      "confidence",
+    ],
+  },
+};
 
 function failureResult(input: ParseExpenseInput): ParsedExpense {
   return {
@@ -67,58 +163,80 @@ function yuanToCents(value: unknown) {
   return Number.isSafeInteger(cents) ? cents : undefined;
 }
 
-function stringArray(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
+function uniqueValidMemberIds(value: unknown, validMemberIds: Set<string>) {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value.filter(
+        (memberId): memberId is string =>
+          typeof memberId === "string" && validMemberIds.has(memberId)
+      )
+    ),
+  ];
+}
+
+function uniqueStrings(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value.filter(
+        (item): item is string => typeof item === "string" && item.trim().length > 0
+      )
+    ),
+  ];
+}
+
+function optionalString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
 }
 
 function normalizeModelExpense(
-  value: ModelExpense,
+  value: unknown,
   input: ParseExpenseInput,
   members: Member[]
 ): ParsedExpense {
-  const totalCents = yuanToCents(value.totalYuan);
+  if (!value || typeof value !== "object") return failureResult(input);
+  const raw = value as Partial<ModelExpense>;
+  const totalCents = yuanToCents(raw.totalYuan);
   if (totalCents === undefined) return failureResult(input);
 
   const validMemberIds = new Set(members.map((member) => member.id));
-  const participantMemberIds = stringArray(value.participantMemberIds).filter((id) =>
-    validMemberIds.has(id)
-  );
-  const paidByMemberId =
-    typeof value.paidByMemberId === "string" && validMemberIds.has(value.paidByMemberId)
-      ? value.paidByMemberId
-      : undefined;
-  const items = Array.isArray(value.items)
-    ? value.items.flatMap((rawItem) => {
-        if (!rawItem || typeof rawItem !== "object") return [];
-        const item = rawItem as ModelExpenseItem;
+  const items = Array.isArray(raw.items)
+    ? raw.items.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
         const priceCents = yuanToCents(item.priceYuan);
-        if (typeof item.name !== "string" || priceCents === undefined) return [];
+        const name = optionalString(item.name);
+        if (!name || priceCents === undefined) return [];
         return [
           {
-            name: item.name,
+            name,
             priceCents,
-            memberIds: stringArray(item.memberIds).filter((id) =>
-              validMemberIds.has(id)
-            ),
+            memberIds: uniqueValidMemberIds(item.memberIds, validMemberIds),
           },
         ];
       })
     : undefined;
+  const paidByMemberId =
+    typeof raw.paidByMemberId === "string" && validMemberIds.has(raw.paidByMemberId)
+      ? raw.paidByMemberId
+      : undefined;
 
   return {
-    merchantName:
-      typeof value.merchantName === "string" ? value.merchantName : undefined,
+    merchantName: optionalString(raw.merchantName),
     totalCents,
-    taxCents: yuanToCents(value.taxYuan),
-    tipCents: yuanToCents(value.tipYuan),
+    taxCents: yuanToCents(raw.taxYuan),
+    tipCents: yuanToCents(raw.tipYuan),
     items: items?.length ? items : undefined,
     paidByMemberId,
-    participantMemberIds: [...new Set(participantMemberIds)],
-    note: typeof value.note === "string" ? value.note : undefined,
-    unresolvedNames: [...new Set(stringArray(value.unresolvedNames))],
-    confidence: value.confidence === "high" ? "high" : "low",
+    participantMemberIds: uniqueValidMemberIds(
+      raw.participantMemberIds,
+      validMemberIds
+    ),
+    note: optionalString(raw.note),
+    unresolvedNames: uniqueStrings(raw.unresolvedNames),
+    confidence: raw.confidence === "high" ? "high" : "low",
   };
 }
 
@@ -127,91 +245,76 @@ function mockResult(input: ParseExpenseInput) {
   return input.type === "image" ? receiptFixture : textExpenseFixture;
 }
 
-function jsonFromModelContent(content: string): ModelExpense {
-  const trimmed = content.trim();
-  const unfenced = trimmed.startsWith("```")
-    ? trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")
-    : trimmed;
-  const parsed: unknown = JSON.parse(unfenced);
-  if (!parsed || typeof parsed !== "object") throw new Error("invalid AI response");
-  return parsed as ModelExpense;
-}
+function buildModelInput(input: ParseExpenseInput, members: Member[]) {
+  const directory = members.map(({ id, displayName, isCurrentUser }) => ({
+    id,
+    displayName,
+    isCurrentUser: Boolean(isCurrentUser),
+  }));
+  const instructions = [
+    "Extract exactly one shared expense.",
+    "All monetary output fields are yuan numbers, never cents.",
+    "Only use IDs from the supplied member directory.",
+    "Match first-person references such as 我 to the member marked isCurrentUser.",
+    "Put every mentioned name that cannot be matched in unresolvedNames.",
+    "Do not invent prices, people, receipt lines, tax, tip, or payer details.",
+    `Member directory: ${JSON.stringify(directory)}`,
+  ].join(" ");
 
-function modelMessages(input: ParseExpenseInput, members: Member[]) {
-  const memberDirectory = members.map(({ id, displayName }) => ({ id, displayName }));
-  const instruction = `Extract one shared expense. Return JSON only with this shape: {merchantName?: string, totalYuan: number, taxYuan?: number, tipYuan?: number, items?: [{name: string, priceYuan: number, memberIds: string[]}], paidByMemberId?: string, participantMemberIds: string[], note?: string, unresolvedNames: string[], confidence: "high"|"low"}. All money values must be yuan numbers. Match people only against this member directory: ${JSON.stringify(memberDirectory)}. Put mentioned names that cannot be matched into unresolvedNames. Do not invent item prices or split details.`;
-
-  if (input.type === "image") {
-    return [
-      { role: "system", content: instruction },
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "Parse this receipt image." },
-          { type: "image_url", image_url: { url: input.data } },
-        ],
-      },
-    ];
-  }
+  const content =
+    input.type === "image"
+      ? [
+          {
+            type: "input_text" as const,
+            text: "Parse this receipt image into the provided expense schema.",
+          },
+          {
+            type: "input_image" as const,
+            image_url: input.data,
+            detail: "high" as const,
+          },
+        ]
+      : [
+          {
+            type: "input_text" as const,
+            text: `Parse this expense description into the provided expense schema:\n${input.data}`,
+          },
+        ];
 
   return [
-    { role: "system", content: instruction },
-    { role: "user", content: `Parse this expense description:\n${input.data}` },
+    { role: "system" as const, content: instructions },
+    { role: "user" as const, content },
   ];
 }
 
 async function callModel(input: ParseExpenseInput, members: Member[]) {
-  const apiKey = process.env.AI_API_KEY;
-  if (!apiKey) throw new Error("AI_API_KEY is not configured");
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const response = await fetch(
-      process.env.AI_API_URL ?? "https://api.openai.com/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: process.env.AI_MODEL ?? "gpt-4.1-mini",
-          messages: modelMessages(input, members),
-          response_format: { type: "json_object" },
-          temperature: 0,
-        }),
-        signal: controller.signal,
-      }
-    );
-    if (!response.ok) throw new Error(`AI request failed: ${response.status}`);
-    const body: unknown = await response.json();
-    const content =
-      body &&
-      typeof body === "object" &&
-      Array.isArray((body as { choices?: unknown }).choices) &&
-      typeof (body as { choices: Array<{ message?: { content?: unknown } }> }).choices[0]
-        ?.message?.content === "string"
-        ? (body as { choices: Array<{ message: { content: string } }> }).choices[0].message
-            .content
-        : null;
-    if (!content) throw new Error("AI response did not contain JSON");
-    return jsonFromModelContent(content);
-  } finally {
-    clearTimeout(timeout);
-  }
+  const client = new OpenAI({
+    apiKey,
+    timeout: OPENAI_TIMEOUT_MS,
+    maxRetries: 0,
+  });
+  const response = await client.responses.create({
+    model: OPENAI_MODEL,
+    input: buildModelInput(input, members),
+    text: { format: EXPENSE_RESPONSE_FORMAT },
+  });
+  if (!response.output_text) throw new Error("AI response did not contain output");
+  return JSON.parse(response.output_text) as unknown;
 }
 
 export async function parseExpense(
   input: ParseExpenseInput,
   members: Member[]
 ): Promise<ParsedExpense> {
+  if (process.env.MOCK_AI === "true") {
+    return normalizeModelExpense(mockResult(input), input, members);
+  }
+
   try {
-    const modelResult =
-      process.env.MOCK_AI === "true"
-        ? mockResult(input)
-        : await callModel(input, members);
-    return normalizeModelExpense(modelResult, input, members);
+    return normalizeModelExpense(await callModel(input, members), input, members);
   } catch {
     return failureResult(input);
   }

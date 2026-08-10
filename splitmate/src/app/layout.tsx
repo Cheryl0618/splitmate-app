@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SiteNav } from "@/components/site-nav";
 import { CurrentUserProvider } from "@/lib/current-user";
 import { getCurrentUserId } from "@/server/current-user";
 import "./globals.css";
@@ -15,6 +16,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="zh-CN" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         <CurrentUserProvider initialUserId={initialUserId}>
+          <SiteNav />
           {children}
         </CurrentUserProvider>
       </body>

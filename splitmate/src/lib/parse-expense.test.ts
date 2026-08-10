@@ -64,18 +64,24 @@ describe("parseExpense in mock mode", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("converts every model money field to integer cents", async () => {
-    const receipt = await parseExpense(
-      { type: "image", data: "data:image/jpeg;base64,receipt" },
-      members
-    );
+  it("converts every fixture money field to integer cents", async () => {
+    const results = await Promise.all([
+      parseExpense({ type: "image", data: "data:image/jpeg;base64,receipt" }, members),
+      parseExpense({ type: "text", data: "今晚聚餐我付了238" }, members),
+      parseExpense({ type: "text", data: "mock-failure" }, members),
+    ]);
 
-    expect(receipt.totalCents).toBe(12_000);
-    expect(receipt.taxCents).toBe(800);
-    expect(receipt.tipCents).toBe(0);
-    expect(receipt.items?.every((item) => Number.isInteger(item.priceCents))).toBe(
-      true
-    );
+    expect(results[0].totalCents).toBe(12_000);
+    expect(results[0].taxCents).toBe(800);
+    expect(results[0].tipCents).toBe(0);
+    for (const result of results) {
+      expect(Number.isInteger(result.totalCents)).toBe(true);
+      if (result.taxCents !== undefined) expect(Number.isInteger(result.taxCents)).toBe(true);
+      if (result.tipCents !== undefined) expect(Number.isInteger(result.tipCents)).toBe(true);
+      expect(result.items?.every((item) => Number.isInteger(item.priceCents)) ?? true).toBe(
+        true
+      );
+    }
   });
 
   it("returns a low-confidence shell instead of throwing for the failure fixture", async () => {

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { EmptyState } from "@/components/empty-state";
 import { useCurrentUser } from "@/lib/current-user";
 import { formatCents } from "@/lib/format";
 import type { DemoUserSummary, GroupCardData } from "@/server/groups";
@@ -48,17 +49,8 @@ export function HomeDashboard({
 
   return (
     <main className="min-h-screen bg-[#f6f8f7] text-slate-900">
-      <div className="mx-auto max-w-6xl px-5 py-6 sm:px-8 lg:px-12">
-        <header className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-teal-600 text-xl font-black text-white shadow-sm">
-              S
-            </span>
-            <div>
-              <p className="text-lg font-extrabold tracking-tight">SplitMate</p>
-              <p className="text-xs text-slate-500">一起记，轻松结</p>
-            </div>
-          </div>
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-8 lg:px-12">
+        <header className="flex justify-end">
           <UserSwitcher users={users} />
         </header>
 
@@ -74,8 +66,22 @@ export function HomeDashboard({
           </p>
         </section>
 
-        <section className="grid gap-5 pb-16 md:grid-cols-2">
-          {visibleGroups.map((group) => (
+        {visibleGroups.length === 0 ? (
+          <div className="pb-16">
+            <EmptyState
+              title="还没有可查看的群组"
+              description={
+                users.length > 0
+                  ? "当前身份还没有加入群组。先切换右上角的演示用户，看看其他成员加入的共享账本。"
+                  : "演示数据还没有准备好。请先运行数据库 seed，再回来查看群组。"
+              }
+              actionHref={users.length > 0 ? "#demo-user-switcher" : "/"}
+              actionLabel={users.length > 0 ? "选择其他用户" : "重新检查"}
+            />
+          </div>
+        ) : (
+          <section className="grid gap-5 pb-16 md:grid-cols-2">
+            {visibleGroups.map((group) => (
             <Link
               key={group.id}
               href={`/groups/${group.id}`}
@@ -111,8 +117,9 @@ export function HomeDashboard({
                 </div>
               </div>
             </Link>
-          ))}
-        </section>
+            ))}
+          </section>
+        )}
       </div>
     </main>
   );

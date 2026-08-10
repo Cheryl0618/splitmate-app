@@ -1,36 +1,159 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Splitmate
 
-## Getting Started
+多人共享记账工具。拍一张小票或者说一句话，系统算出谁欠谁多少钱，并给出转账笔数最少的结算方案。
 
-First, run the development server:
+这是一个从产品需求到实现的完整练习项目，只在本地运行，不部署。
+
+> 截图和演示视频放这里
+>
+> ![群组余额](docs/screenshots/group.png)
+> ![结算方案与解释链](docs/screenshots/settle.png)
+> ![关系画像](docs/screenshots/relationship.png)
+
+---
+
+## 为什么做这个
+
+几个人一起吃饭、出去玩、合租，经常有人先垫钱、之后再互相还。现在的处理方式无非三种：在群里口头说一句然后忘掉、用 Excel 手动算、或者用 Splitwise 这类工具。
+
+第三种是目前最好的，但它有个共同问题：**录入太麻烦**。用户要新建账单、填金额、选参与人、选分摊方式，一顿饭点七八下。结果就是很多人下载了没用几次，最后还是回到"算了不算了"。
+
+所以这个项目没有做成"更好看的 Splitwise"，而是集中解决两件事：
+
+1. 把记一笔账的成本从"填一张表"降到"拍一张照"
+2. 让简化后的结算方案能被解释清楚，而不只是给出一个正确但让人困惑的结果
+
+---
+
+## 主要功能
+
+- **群组记账**：支持均分、按比例、按金额三种分摊方式
+- **收据识别**：拍一张小票，自动识别商品项和金额，逐项勾选谁吃了什么，税费小费按比例分摊
+- **自然语言记账**：一句话记账（"今晚聚餐我付了 238，小王没喝酒，Lucy 吃了龙虾"）
+- **最优结算**：计算转账笔数最少的结算方案，并说明每一笔的来源
+- **关系画像**：两个人之间的共同消费、请客次数、承担比例、结算习惯
+
+---
+
+## 几个做过取舍的决定
+
+这部分是这个项目里我认为比功能本身更值得说的内容。
+
+### 1. 金额全部用整数「分」存储
+
+数据库里没有任何 Float 或 Decimal 字段，所有金额字段以 `Cents` 结尾，只在渲染的那一刻才除以 100。
+
+分摊必然产生除不尽的情况（100 元三个人）。如果用浮点数，每笔账单漏掉的零点几分会不断累积，几个月后余额永远清不了零，而且这类问题极难定位、历史数据无法修复。
+
+余数用最大余数法分配，并且有测试保证 `sum(shares) === total` 恒成立，包括 1 分钱分给 3 个人这种边界。
+
+**代价**：所有涉及金额的代码都要处理单位转换，写起来比直接用小数啰嗦。
+
+### 2. 结算算法用精确解，但承认贪心已经够用
+
+最少转账笔数是 NP-hard 的（等价于把一组和为零的数字最多划分成几个和为零的子集）。实现上先做净额化消掉环形债务，再用位掩码 DP 找出最多的零和子集，子集内部用贪心配对。人数超过 15 时退回纯贪心。
+
+实测下来贪心在大部分情况下已经是最优的，精确解只在"人群天然分成几个独立小圈子"时更好。比如净额是 `{A:+10, B:-6, C:-4, D:+6, E:-6}` 时，贪心要 4 笔，精确解 3 笔。
+
+**代价**：多写了几十行 DP，收益场景其实不多。留下它是因为实现成本低，而且这个差异正好能演示出来。
+
+### 3. 简化债务必须给出解释
+
+简化后 A 可能需要转钱给一个不太熟的 C。金额是对的，但用户会困惑——Splitwise 因为这个被吐槽了很多年。
+
+所以每一笔转账都可以展开，说明付款人的欠款是哪几笔账单来的、收款人垫付了哪几笔，以及当两人之间没有直接欠款关系时，明确写一句"这是系统合并多笔债务后的结果"。同时保留关闭简化的开关。
+
+这条是整个项目里我最坚持的一个设计。算得对不等于用得对。
+
+### 4. 收据识别和自然语言记账是同一个模块
+
+两者输入类型不同（图片 / 文字），但走同一个模型调用、返回同一个 JSON schema、接同一个可编辑的确认表单。写成两套是纯粹的浪费。
+
+识别结果一律进可编辑表单而不是只读预览，因为识别一定会出错。产品设计上假设的是"每次都可能错"，而不是"偶尔会错"——用户改一个数字的成本，必须远低于重新录入一遍。
+
+### 5. Mock 模式是有意保留的，不是没做完
+
+`MOCK_AI=true` 时解析模块不发任何网络请求，直接返回预置结果。
+
+这么做有三个原因：没有 API key 的人也能完整跑起来；演示时不会因为网络、超时或模型抽风而翻车；测试可以断言确定性的结果。
+
+Mock 和真实调用共用同一个函数签名和返回结构，切换只改一个环境变量。
+
+### 6. 砍掉了真实登录
+
+没有注册、邀请链接、JWT，取而代之的是右上角一个用户切换器。
+
+这不完全是为了省事。演示"小李付了钱、Lucy 看到自己欠 79"这个场景时，真登录要开两个浏览器来回切，切换器点一下就完成了。对一个不上线的项目来说，它比真登录更好用。
+
+---
+
+## 已知的局限
+
+诚实列一下现在没做对或者没做完的地方。
+
+**Settlement 没有关联到具体的 Expense。** 现在一笔结算只记录转账双方和金额，无法回答"某笔账单结清了没有"。靠净额倒推目前还够用，但按账单维度追踪结清状态就做不了。关系画像里的"平均结清天数"因此用的是近似口径（匹配账单产生后双方之间的第一笔结算），并在界面上标注了样本量。
+
+**没有并发处理。** 两个人同时记账可能丢数据。因为不上线，没有做乐观锁或事务隔离。
+
+**收据识别只在少量真实小票上验证过。** 折痕、反光、中英文混排的表现没有系统测过，也没有准确率数据。
+
+**多币种、周期性账单、旅行时间轴没做。** 不是做不了，是判断在 MVP 阶段投入产出比不划算，具体原因写在 `docs/PRD.md` 的"本期不做"一节。
+
+---
+
+## 技术栈
+
+Next.js (App Router) + TypeScript + Prisma + SQLite + Tailwind CSS，测试用 Vitest。
+
+选型的唯一标准是踩坑的人多、前后端一个仓库、本地一条命令跑起来。这个项目的目标是验证产品想法，不是技术选型练习。
+
+## 本地运行
 
 ```bash
+npm install
+npx prisma migrate dev
+npx prisma db seed
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+打开 http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+演示数据包含 5 个成员、2 个群组、一年 100 多笔账单。其中"合租"群组的净额是刻意构造的：直接结算需要 4 笔转账，简化后只需要 3 笔。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+想试真实的收据识别，在 `.env.local` 里设置：
 
-## Learn More
+```
+OPENAI_API_KEY=你的 key
+MOCK_AI=false
+```
 
-To learn more about Next.js, take a look at the following resources:
+改完需要重启 dev server。不设置的话默认走 mock 模式，所有功能照常可用。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 项目结构
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/lib/          纯业务逻辑，不依赖数据库，可直接单元测试
+  settlement.ts   净额计算与最优结算
+  split.ts        三种分摊方式
+  direct-debts.ts 不做简化的逐对欠款
+  relationship.ts 关系统计
+  parse-expense.ts 收据识别与自然语言解析（含 mock）
+src/server/       数据库读写
+src/app/          页面
+docs/PRD.md       完整需求文档
+```
 
-## Deploy on Vercel
+金额相关的计算全部在 `src/lib/` 里，页面和 API 层不允许出现任何金额加减逻辑，保证只有一个计算来源。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 后续规划
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+按投入产出比排序：
+
+1. **AI 消费分析** — 把已有的统计结果翻译成一句人话，数据层已经具备
+2. **旅行时间轴** — 照片、地图、收据聚合展示，数据模型已预留 `tripId` / `location` / `photoUrls` 字段
+3. **多币种** — 需要处理汇率时点和结算币种，改动面比看起来大
+4. **Settlement 关联 Expense** — 修复上面提到的数据模型缺陷
+
+---
+
+完整的需求文档在 [docs/PRD.md](docs/PRD.md)。

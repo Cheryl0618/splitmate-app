@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 
+import { EmptyState } from "@/components/empty-state";
 import { UserSwitcher } from "@/components/user-switcher";
 import { useCurrentUser } from "@/lib/current-user";
 import { formatCents } from "@/lib/format";
@@ -23,6 +24,7 @@ export function SettlementView({ data }: { data: SettlementPageData }) {
   const [simplified, setSimplified] = useState(true);
   const [expandedTransfer, setExpandedTransfer] = useState<string | null>(null);
   const [payingTransfer, setPayingTransfer] = useState<string | null>(null);
+  const [isRefreshing, startRefresh] = useTransition();
   const [error, setError] = useState("");
   const transfers = simplified ? data.optimalTransfers : data.directTransfers;
   const orderedTransfers = [...transfers].sort((left, right) => {
@@ -59,7 +61,8 @@ export function SettlementView({ data }: { data: SettlementPageData }) {
       if (!response.ok) throw new Error(result.error || "确认转账失败");
 
       setExpandedTransfer(null);
-      router.refresh();
+      setPayingTransfer(null);
+      startRefresh(() => router.refresh());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "确认转账失败");
       setPayingTransfer(null);
@@ -68,11 +71,11 @@ export function SettlementView({ data }: { data: SettlementPageData }) {
 
   return (
     <main className="min-h-screen bg-[#f6f8f7] text-slate-900">
-      <div className="mx-auto max-w-4xl px-5 py-6 sm:px-8 lg:px-12">
-        <header className="flex items-center justify-between gap-4">
+      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-8 lg:px-12">
+        <header className="flex items-center justify-between gap-3">
           <Link
             href={`/groups/${data.id}`}
-            className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-teal-700"
+            className="inline-flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-slate-500 hover:text-teal-700"
           >
             <span aria-hidden="true">←</span>
             返回{data.name}
@@ -88,13 +91,13 @@ export function SettlementView({ data }: { data: SettlementPageData }) {
         </div>
 
         {data.isSettled ? (
-          <section className="rounded-3xl border border-emerald-200 bg-emerald-50 px-6 py-12 text-center shadow-[0_14px_40px_rgba(15,23,42,0.04)]">
-            <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-600 text-3xl text-white">
-              ✓
-            </span>
-            <h2 className="mt-5 text-2xl font-extrabold text-emerald-900">全部结清</h2>
-            <p className="mt-2 text-emerald-700">群组内所有成员的净额都已归零。</p>
-          </section>
+          <EmptyState
+            title="全部结清"
+            description="群组内所有成员的净额都已归零。现在可以返回群组查看历史账单，下一笔支出会重新生成结算方案。"
+            actionHref={`/groups/${data.id}`}
+            actionLabel="返回群组查看账单"
+            tone="success"
+          />
         ) : (
           <>
             <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.05)] sm:p-6">
@@ -153,8 +156,8 @@ export function SettlementView({ data }: { data: SettlementPageData }) {
                       isRelated ? "border-teal-300 ring-2 ring-teal-100" : "border-slate-200"
                     }`}
                   >
-                    <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-                      <div className="flex items-center gap-4">
+                    <div className="flex min-w-0 flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                      <div className="flex min-w-0 items-center gap-4">
                         <span
                           className={`grid h-11 w-11 place-items-center rounded-full text-sm font-bold ${
                             isRelated
@@ -164,8 +167,8 @@ export function SettlementView({ data }: { data: SettlementPageData }) {
                         >
                           {transfer.fromName.slice(0, 1).toUpperCase()}
                         </span>
-                        <div>
-                          <p className="font-bold">
+                        <div className="min-w-0">
+                          <p className="break-words font-bold">
                             {transfer.fromName}{" "}
                             <span className="mx-1 text-slate-400">付给</span>{" "}
                             {transfer.toName}
@@ -189,11 +192,15 @@ export function SettlementView({ data }: { data: SettlementPageData }) {
                         ) : null}
                         <button
                           type="button"
-                          disabled={payingTransfer !== null}
+                          disabled={payingTransfer !== null || isRefreshing}
                           onClick={() => markPaid(transfer)}
                           className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-bold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                         >
-                          {payingTransfer === key ? "确认中…" : "标记已支付"}
+                          {payingTransfer === key
+                            ? "确认中…"
+                            : isRefreshing
+                              ? "更新余额中…"
+                              : "标记已支付"}
                         </button>
                       </div>
                     </div>
@@ -205,14 +212,14 @@ export function SettlementView({ data }: { data: SettlementPageData }) {
                             <h3 className="font-bold text-rose-700">
                               {transfer.fromName} 为什么需要付款
                             </h3>
-                            <p className="mt-1 text-sm text-slate-500">
+                            <p className="mt-1 font-semibold text-rose-600">
                               当前净额 {formatCents(data.balances[transfer.from] ?? 0)}
                             </p>
                             <ul className="mt-3 space-y-2 text-sm">
                               {transfer.explanation.debtorItems.map((item) => (
                                 <li
                                   key={`${item.expenseId}:${item.counterpartyName}`}
-                                  className="rounded-xl bg-white px-3 py-2"
+                                  className="break-words rounded-xl bg-white px-3 py-2"
                                 >
                                   <Link
                                     href={`/expenses/${item.expenseId}`}
@@ -229,12 +236,12 @@ export function SettlementView({ data }: { data: SettlementPageData }) {
                             <h3 className="font-bold text-emerald-700">
                               {transfer.toName} 为什么应该收款
                             </h3>
-                            <p className="mt-1 text-sm text-slate-500">
+                            <p className="mt-1 font-semibold text-emerald-600">
                               当前净额 +{formatCents(data.balances[transfer.to] ?? 0)}
                             </p>
                             <ul className="mt-3 space-y-2 text-sm">
                               {transfer.explanation.creditorItems.map((item) => (
-                                <li key={item.expenseId} className="rounded-xl bg-white px-3 py-2">
+                                <li key={item.expenseId} className="break-words rounded-xl bg-white px-3 py-2">
                                   <Link
                                     href={`/expenses/${item.expenseId}`}
                                     className="font-semibold hover:text-teal-700"
