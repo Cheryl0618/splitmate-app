@@ -19,4 +19,13 @@ describe("formatCents", () => {
   it("adds thousands separators to summary amounts", () => {
     expect(formatCents(124_000, "CNY")).toBe("¥1,240.00");
   });
+
+  it("uses the typographic minus sign for negative amounts", () => {
+    expect(formatCents(-6_000, "CNY")).toBe("−¥60.00");
+  });
+
+  it("uses locale-specific currency notation", () => {
+    expect(formatCents(12_345, "USD", "zh")).toBe("US$123.45");
+    expect(formatCents(12_345, "CNY", "en")).toBe("CN¥123.45");
+  });
 });

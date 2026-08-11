@@ -3,6 +3,7 @@ import { openDatabase } from "@/server/database";
 import type { GroupMemberSummary } from "@/server/groups";
 import type { Currency } from "@/lib/currency";
 import type { ExpenseCategory } from "@/lib/expense-input";
+import { normalizeAvatarColor } from "@/lib/avatar-colors";
 import { getExportSummaryData, type ExportSummaryData } from "@/server/export-summary";
 
 export interface GroupExpenseSummary {
@@ -63,7 +64,7 @@ export function getGroupDetail(groupId: string): GroupDetailData | null {
 
     const memberRows = database
       .prepare(
-        `SELECT id, userId, displayName
+        `SELECT id, userId, displayName, avatarColor
          FROM "GroupMember"
          WHERE groupId = ?
          ORDER BY createdAt, id`
@@ -111,10 +112,11 @@ export function getGroupDetail(groupId: string): GroupDetailData | null {
       id: group.id,
       name: group.name,
       currency: group.currency,
-      members: memberRows.map(({ id, userId, displayName }) => ({
+      members: memberRows.map(({ id, userId, displayName, avatarColor }) => ({
         id,
         userId,
         displayName,
+        avatarColor: normalizeAvatarColor(avatarColor),
       })),
       balances: getGroupBalances(groupId),
       expenses: expenseRows.map((expense) => ({

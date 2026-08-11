@@ -1,16 +1,13 @@
 import { getGroupBalances } from "@/server/balances";
 import { openDatabase } from "@/server/database";
+import { normalizeAvatarColor, type AvatarColor } from "@/lib/avatar-colors";
 import type { Currency } from "@/lib/currency";
-
-export interface DemoUserSummary {
-  id: string;
-  displayName: string;
-}
 
 export interface GroupMemberSummary {
   id: string;
   userId: string | null;
   displayName: string;
+  avatarColor: AvatarColor;
 }
 
 export interface GroupCardData {
@@ -32,24 +29,21 @@ interface MemberRow extends GroupMemberSummary {
 }
 
 export function getGroupListData(): {
-  users: DemoUserSummary[];
   groups: GroupCardData[];
 } {
   const database = openDatabase();
 
   try {
-    const userRows = database
-      .prepare(`SELECT id, displayName FROM "User" ORDER BY createdAt, id`)
-      .all() as DemoUserSummary[];
     const groupRows = database
       .prepare(`SELECT id, name, currency FROM "Group" ORDER BY createdAt, id`)
       .all() as GroupRow[];
     const memberRows = database
       .prepare(
-        `SELECT id, groupId, userId, displayName FROM "GroupMember" ORDER BY createdAt, id`
+        `SELECT id, groupId, userId, displayName, avatarColor
+         FROM "GroupMember"
+         ORDER BY createdAt, id`
       )
       .all() as MemberRow[];
-    const users = userRows.map(({ id, displayName }) => ({ id, displayName }));
     const groups = groupRows.map((group): GroupCardData => {
       const members = memberRows.filter((member) => member.groupId === group.id);
       const balances = getGroupBalances(group.id);
@@ -63,16 +57,17 @@ export function getGroupListData(): {
         id: group.id,
         name: group.name,
         currency: group.currency,
-        members: members.map(({ id, userId, displayName }) => ({
+        members: members.map(({ id, userId, displayName, avatarColor }) => ({
           id,
           userId,
           displayName,
+          avatarColor: normalizeAvatarColor(avatarColor),
         })),
         balancesByUserId,
       };
     });
 
-    return { users, groups };
+    return { groups };
   } finally {
     database.close();
   }

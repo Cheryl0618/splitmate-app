@@ -1,8 +1,8 @@
 export const demoUsers = [
-  { id: "user-xiaoli", displayName: "小李", email: "xiaoli@splitmate.local" },
-  { id: "user-xiaowang", displayName: "小王", email: "xiaowang@splitmate.local" },
-  { id: "user-lucy", displayName: "Lucy", email: "lucy@splitmate.local" },
-  { id: "user-tom", displayName: "Tom", email: "tom@splitmate.local" },
+  { id: "user-xiaoli", displayName: "小李", avatarColor: "teal" },
+  { id: "user-xiaowang", displayName: "小王", avatarColor: "coral" },
+  { id: "user-lucy", displayName: "Lucy", avatarColor: "amber" },
+  { id: "user-tom", displayName: "Tom", avatarColor: "sky" },
 ] as const;
 
 export type SeedSplitMethod = "EQUAL" | "WEIGHTED" | "EXACT";
@@ -20,6 +20,7 @@ export interface SeedMember {
   id: string;
   userId: string | null;
   displayName: string;
+  avatarColor: "teal" | "coral" | "amber" | "sky" | "violet" | "rose";
 }
 
 export interface SeedExpense {
@@ -53,19 +54,19 @@ export interface SeedGroup {
 }
 
 const homeMembers: SeedMember[] = [
-  { id: "member-home-xiaoli", userId: "user-xiaoli", displayName: "小李" },
-  { id: "member-home-xiaowang", userId: "user-xiaowang", displayName: "小王" },
-  { id: "member-home-lucy", userId: "user-lucy", displayName: "Lucy" },
-  { id: "member-home-tom", userId: "user-tom", displayName: "Tom" },
-  { id: "member-home-emma", userId: null, displayName: "Emma" },
+  { id: "member-home-xiaoli", userId: "user-xiaoli", displayName: "小李", avatarColor: "teal" },
+  { id: "member-home-xiaowang", userId: "user-xiaowang", displayName: "小王", avatarColor: "coral" },
+  { id: "member-home-lucy", userId: "user-lucy", displayName: "Lucy", avatarColor: "amber" },
+  { id: "member-home-tom", userId: "user-tom", displayName: "Tom", avatarColor: "sky" },
+  { id: "member-home-emma", userId: null, displayName: "Emma", avatarColor: "violet" },
 ];
 
 const hawaiiMembers: SeedMember[] = [
-  { id: "member-hawaii-xiaoli", userId: "user-xiaoli", displayName: "小李" },
-  { id: "member-hawaii-xiaowang", userId: "user-xiaowang", displayName: "小王" },
-  { id: "member-hawaii-lucy", userId: "user-lucy", displayName: "Lucy" },
-  { id: "member-hawaii-tom", userId: "user-tom", displayName: "Tom" },
-  { id: "member-hawaii-emma", userId: null, displayName: "Emma" },
+  { id: "member-hawaii-xiaoli", userId: "user-xiaoli", displayName: "小李", avatarColor: "teal" },
+  { id: "member-hawaii-xiaowang", userId: "user-xiaowang", displayName: "小王", avatarColor: "coral" },
+  { id: "member-hawaii-lucy", userId: "user-lucy", displayName: "Lucy", avatarColor: "amber" },
+  { id: "member-hawaii-tom", userId: "user-tom", displayName: "Tom", avatarColor: "sky" },
+  { id: "member-hawaii-emma", userId: null, displayName: "Emma", avatarColor: "violet" },
 ];
 
 const HOME = {
@@ -458,3 +459,84 @@ export const seedGroups: SeedGroup[] = [
 ];
 
 export const homeGroupSeed = seedGroups[0];
+
+export type SeedLocale = "zh" | "en";
+
+const englishDescriptions: Record<string, string> = {
+  "八九月水电费": "August–September utilities",
+  "十十一月燃气费": "October–November gas",
+  "十二月与一月电费": "December–January electricity",
+  "二三月水电燃气": "February–March utilities",
+  "四五月水费": "April–May water",
+  "六七月燃气费": "June–July gas",
+  "周末超市补货": "Weekend groceries",
+  "生鲜和早餐食材": "Fresh produce and breakfast",
+  "附近餐厅晚餐": "Dinner nearby",
+  "厨房常备食材": "Kitchen staples",
+  "周末外卖": "Weekend takeout",
+  "咖啡豆和牛奶": "Coffee beans and milk",
+  "会员店采购": "Warehouse club groceries",
+  "下班后聚餐": "Dinner after work",
+  "水果零食补货": "Fruit and snacks",
+  "周末桌游局": "Weekend board games",
+  "生日聚餐": "Birthday dinner",
+  "火锅食材": "Hot pot groceries",
+  "社区咖啡店": "Neighborhood coffee",
+  "深夜外卖": "Late-night takeout",
+  "清晨菜市场": "Morning market",
+  "清洁用品补充": "Cleaning supplies",
+  "周五晚餐": "Friday dinner",
+  "烘焙材料": "Baking supplies",
+  "一起打车": "Shared ride",
+  "搬家后聚餐": "Dinner after moving",
+  "年末超市个人采购": "Year-end groceries",
+  "年末日用品代购": "Year-end household supplies",
+  "往返机票尾款": "Flight balance",
+  "酒店尾款": "Hotel balance",
+  "海边餐厅": "Beachside restaurant",
+  "环岛 Uber": "Island Uber",
+  "冲浪体验课": "Surf lesson",
+  "酒店房型升级": "Hotel room upgrade",
+  "冲浪装备租赁": "Surf gear rental"
+};
+
+function englishDescription(expense: SeedExpense) {
+  if (expense.id.startsWith("home-rent-")) {
+    const date = new Date(expense.date);
+    const month = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(date);
+    return `${month} rent`;
+  }
+  const monthEnd = expense.description.endsWith(" 月末补单");
+  const numbered = expense.description.match(/^(.*) ([1-3])$/);
+  const base = monthEnd
+    ? expense.description.slice(0, -" 月末补单".length)
+    : numbered?.[1] ?? expense.description;
+  const translated = englishDescriptions[base] ?? englishDescriptions[expense.description] ?? expense.description;
+  if (monthEnd) return `${translated} — month-end adjustment`;
+  if (numbered) return `${translated} ${numbered[2]}`;
+  return translated;
+}
+
+export function localizedSeedData(locale: SeedLocale) {
+  if (locale === "zh") return { users: demoUsers, groups: seedGroups };
+  const names: Record<string, string> = {
+    "user-xiaoli": "Alex",
+    "user-xiaowang": "Wang",
+    "user-lucy": "Lucy",
+    "user-tom": "Tom",
+  };
+  const users = demoUsers.map((user) => ({ ...user, displayName: names[user.id] ?? user.displayName }));
+  const groups = seedGroups.map((group) => ({
+    ...group,
+    name: group.id === "group-home" ? "Apartment" : "Hawaii Trip",
+    members: group.members.map((member) => ({
+      ...member,
+      displayName: member.userId ? names[member.userId] ?? member.displayName : member.displayName,
+    })),
+    expenses: group.expenses.map((expense) => ({
+      ...expense,
+      description: englishDescription(expense),
+    })),
+  }));
+  return { users, groups };
+}

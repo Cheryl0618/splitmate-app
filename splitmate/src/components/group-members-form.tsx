@@ -1,12 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Plus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { useCurrentUser } from "@/lib/current-user";
+import { useT } from "@/i18n/context";
 
 export function GroupMembersForm({ groupId }: { groupId: string }) {
   const router = useRouter();
+  const { locale, t } = useT();
   const { currentUserId } = useCurrentUser();
   const [memberNames, setMemberNames] = useState("");
   const [saving, setSaving] = useState(false);
@@ -25,20 +28,21 @@ export function GroupMembersForm({ groupId }: { groupId: string }) {
         headers: {
           "content-type": "application/json",
           "x-demo-user-id": currentUserId,
+          "x-ui-locale": locale,
         },
         body: JSON.stringify({ memberNames }),
       });
       const result = (await response.json()) as { addedCount?: number; error?: string };
-      if (!response.ok) throw new Error(result.error || "添加成员失败");
+      if (!response.ok) throw new Error(result.error || t("members.addError"));
       setMemberNames("");
       setMessage(
         result.addedCount
-          ? `已添加 ${result.addedCount} 位成员`
-          : "这些成员已经在群组中"
+          ? t("members.added", { count: result.addedCount })
+          : t("members.alreadyAdded")
       );
       router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "添加成员失败");
+      setError(caught instanceof Error ? caught.message : t("members.addError"));
     } finally {
       setSaving(false);
     }
@@ -47,28 +51,29 @@ export function GroupMembersForm({ groupId }: { groupId: string }) {
   return (
     <section
       id="members"
-      className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_16px_50px_rgba(15,23,42,0.06)] sm:p-8"
+      className="mt-6 rounded-[14px] bg-surface p-5 sm:p-8"
     >
-      <h2 className="text-xl font-extrabold">添加成员</h2>
-      <p className="mt-2 text-sm leading-6 text-slate-500">
-        已有账号的名字会自动关联，其他名字会作为虚拟成员加入。
+      <h2 className="text-xl font-extrabold">{t("members.add")}</h2>
+      <p className="mt-2 text-sm leading-6 text-ink-soft">
+        {t("members.description")}
       </p>
       <form onSubmit={submit} className="mt-5 space-y-4">
         <textarea
           value={memberNames}
           onChange={(event) => setMemberNames(event.target.value)}
-          placeholder={"例如「小明，小红」\n支持逗号或换行分隔"}
+          placeholder={t("members.placeholder")}
           rows={4}
-          className="w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+          className="w-full resize-none rounded-[14px] border border-line px-4 py-3 outline-none focus:border-line focus:ring-2 focus:ring-ink"
         />
-        {error ? <p className="text-sm font-semibold text-rose-600" role="alert">{error}</p> : null}
-        {message ? <p className="text-sm font-semibold text-emerald-600" role="status">{message}</p> : null}
+        {error ? <p className="text-sm font-semibold text-ink" role="alert">{error}</p> : null}
+        {message ? <p className="text-sm font-semibold text-ink" role="status">{message}</p> : null}
         <button
           type="submit"
           disabled={!memberNames.trim() || saving}
-          className="rounded-xl bg-teal-600 px-5 py-3 text-sm font-bold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-bold text-surface hover:opacity-85 disabled:cursor-not-allowed disabled:bg-inset"
         >
-          {saving ? "添加中…" : "添加成员"}
+          <Plus aria-hidden="true" size={18} strokeWidth={2} />
+          {t(saving ? "members.adding" : "members.add")}
         </button>
       </form>
     </section>

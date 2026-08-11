@@ -9,11 +9,14 @@ import {
 import type { GroupStats } from "@/lib/group-stats";
 import type { RelationshipStats } from "@/lib/relationship";
 import { openDatabase, openWritableDatabase } from "@/server/database";
+import type { Locale } from "@/i18n/context";
 
 type InsightStats = GroupStats | RelationshipStats;
+const INSIGHT_CACHE_VERSION = 2;
 type InsightGenerator = (
   stats: InsightStats,
-  type: InsightType
+  type: InsightType,
+  locale?: Locale
 ) => Promise<Insight[]>;
 
 export interface CachedInsightResult {
@@ -34,9 +37,9 @@ function stableValue(value: unknown): unknown {
   return value;
 }
 
-export function statsContentHash(stats: InsightStats) {
+export function statsContentHash(stats: InsightStats, locale: Locale = "zh") {
   return createHash("sha256")
-    .update(JSON.stringify(stableValue(stats)))
+    .update(`${INSIGHT_CACHE_VERSION}:${locale}:${JSON.stringify(stableValue(stats))}`)
     .digest("hex");
 }
 
@@ -94,15 +97,16 @@ export async function getOrGenerateInsights(
   type: InsightType,
   scopeId: string,
   stats: InsightStats,
-  options: { force?: boolean; generator?: InsightGenerator } = {}
+  options: { force?: boolean; generator?: InsightGenerator; locale?: Locale } = {}
 ): Promise<CachedInsightResult> {
-  const contentHash = statsContentHash(stats);
+  const locale = options.locale ?? "zh";
+  const contentHash = statsContentHash(stats, locale);
   if (!options.force) {
     const cached = readCache(type, scopeId, contentHash);
     if (cached) return { insights: cached, cacheHit: true };
   }
 
-  const insights = await (options.generator ?? generateInsights)(stats, type);
+  const insights = await (options.generator ?? generateInsights)(stats, type, locale);
   if (insights.length > 0) writeCache(type, scopeId, contentHash, insights);
   return { insights, cacheHit: false };
 }

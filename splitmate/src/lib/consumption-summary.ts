@@ -2,12 +2,15 @@ import type { ResponseFormatTextJSONSchemaConfig } from "openai/resources/respon
 
 import {
   groupInsightsFixture,
+  groupInsightsFixtureEn,
   invalidInsightsFixture,
   relationshipInsightsFixture,
+  relationshipInsightsFixtureEn,
 } from "./__fixtures__/consumption-summary";
 import type { GroupStats } from "./group-stats";
 import { requestStructuredOutput } from "./parse-expense";
 import type { RelationshipStats } from "./relationship";
+import type { Locale } from "@/i18n/context";
 
 export type InsightKind = "fact" | "trend";
 export type InsightType = "group" | "relationship";
@@ -15,7 +18,7 @@ export type InsightType = "group" | "relationship";
 export interface Insight {
   text: string;
   kind: InsightKind;
-  relatedCents?: number;
+  relatedCents?: number[];
 }
 
 const INSIGHT_KINDS = new Set<InsightKind>(["fact", "trend"]);
@@ -39,16 +42,20 @@ const INSIGHTS_RESPONSE_FORMAT: ResponseFormatTextJSONSchemaConfig = {
             text: {
               type: "string",
               maxLength: 40,
-              description: "One Chinese sentence of no more than 40 characters.",
+              description: "One sentence in the requested UI language, no more than 40 characters.",
             },
             kind: {
               type: "string",
               enum: ["fact", "trend"],
             },
             relatedCents: {
-              type: ["integer", "null"],
+              type: ["array", "null"],
+              maxItems: 4,
+              items: {
+                type: "integer",
+              },
               description:
-                "An exact integer-cent value copied from allowedRelatedCents, or null.",
+                "Exact integer-cent values copied from allowedRelatedCents, in placeholder order, or null when text has no amount.",
             },
           },
           required: ["text", "kind", "relatedCents"],
@@ -140,29 +147,25 @@ function relationshipPayload(stats: RelationshipStats) {
   };
 }
 
-function buildPrompt(stats: GroupStats | RelationshipStats, type: InsightType) {
+function buildPrompt(stats: GroupStats | RelationshipStats, type: InsightType, locale: Locale) {
   const payload = type === "group"
     ? groupPayload(stats as GroupStats)
     : relationshipPayload(stats as RelationshipStats);
 
   return [
-    "你是共享记账产品的消费总结编辑。",
-    "只根据下方聚合统计生成 2 到 4 条中文客观总结，并按重要性排序。",
-    "每条 text 不超过 40 个汉字，使用第二人称“你们”，不要使用“用户”。",
-    "只陈述数据直接支持的事实或变化趋势，不推测任何原因。",
-    "禁止任何建议，例如“可以考虑”或“建议你们”。",
-    "禁止任何评价，例如“偏高”“过多”“不太合理”。",
-    "禁止判断分账是否公平，也禁止评论任何个人的消费习惯。",
-    "关系总结必须保持中立，不暗示任何一方更值得肯定。",
-    "所有数字必须逐字取自输入，不得自行计算、推导、四舍五入或编造。",
-    "金额一律写成 ¥123.45 形式，保留两位小数。",
-    "relatedCents 只能原样复制 allowedRelatedCents 中的整数；没有合适金额就返回 null。",
-    "好例子：你们最近三个月共 42 笔支出，合计 ¥3820.00。",
-    "好例子：你们本月支出比上月减少 ¥520.00。",
-    "坏例子：你们在咖啡上花得较多，可以考虑控制。",
-    "坏例子：你承担的比例偏高。",
-    `统计类型：${type}`,
-    `聚合统计：${JSON.stringify(payload)}`,
+    "You edit objective spending summaries for a shared-expense product.",
+    `Write 2 to 4 summaries in ${locale === "zh" ? "Simplified Chinese" : "English"}, ordered by importance.`,
+    "Keep each text at 40 characters or fewer. Address the people as '你们' in Chinese or 'you' in English; never call them users.",
+    "State only facts or trends directly supported by the aggregate statistics. Never speculate about causes.",
+    "Never give advice, make value judgments, assess fairness, or comment on anyone's spending habits.",
+    "Relationship summaries must remain neutral and must not praise either person.",
+    "Every number must be copied from the input. Do not calculate, infer, round, or invent numbers.",
+    "Never put a currency symbol or amount literal in text. Use an amount placeholder instead.",
+    "Use {amount} for one amount. For multiple amounts, use {amount1}, {amount2} in continuous order.",
+    "relatedCents must list exact integer values copied from allowedRelatedCents in placeholder order.",
+    "Return null relatedCents when text has no amount, and never attach amounts without placeholders.",
+    `Summary type: ${type}`,
+    `Aggregate statistics: ${JSON.stringify(payload)}`,
   ].join("\n");
 }
 
@@ -188,13 +191,22 @@ export function normalizeInsights(
       return [];
     }
     const relatedCents = item.relatedCents;
+    const hasRelatedCents = Array.isArray(relatedCents);
     const hasValidRelatedCents =
-      Number.isSafeInteger(relatedCents) &&
-      (!allowedRelatedCents || allowedRelatedCents.has(relatedCents as number));
+      hasRelatedCents &&
+      relatedCents.length <= 4 &&
+      relatedCents.every(
+        (cents) =>
+          Number.isSafeInteger(cents) &&
+          (!allowedRelatedCents || allowedRelatedCents.has(cents as number))
+      );
+    if (relatedCents !== null && relatedCents !== undefined && !hasValidRelatedCents) {
+      return [];
+    }
     insights.push({
       text,
       kind: item.kind as InsightKind,
-      ...(hasValidRelatedCents ? { relatedCents: relatedCents as number } : {}),
+      ...(hasValidRelatedCents ? { relatedCents: relatedCents as number[] } : {}),
     });
   }
   return insights.length >= 2 ? insights : [];
@@ -209,14 +221,22 @@ function allowedCents(stats: GroupStats | RelationshipStats, type: InsightType) 
 
 export async function generateInsights(
   stats: GroupStats | RelationshipStats,
-  type: InsightType
+  type: InsightType,
+  locale: Locale = "zh"
 ): Promise<Insight[]> {
   try {
     const response = process.env.MOCK_AI === "true"
       ? process.env.MOCK_INSIGHTS_INVALID === "true"
         ? invalidInsightsFixture
-        : { insights: type === "group" ? groupInsightsFixture : relationshipInsightsFixture }
-      : await requestStructuredOutput(buildPrompt(stats, type), INSIGHTS_RESPONSE_FORMAT);
+        : {
+            insights:
+              type === "group"
+                ? locale === "zh" ? groupInsightsFixture((stats as GroupStats).totalCents) : groupInsightsFixtureEn((stats as GroupStats).totalCents)
+                : locale === "zh" ? relationshipInsightsFixture(
+                    (stats as RelationshipStats).totalSharedCents
+                  ) : relationshipInsightsFixtureEn((stats as RelationshipStats).totalSharedCents),
+          }
+      : await requestStructuredOutput(buildPrompt(stats, type, locale), INSIGHTS_RESPONSE_FORMAT);
     return normalizeInsights(response, allowedCents(stats, type));
   } catch (error) {
     console.error("[generateConsumptionSummary] failed", { type, error });

@@ -4,9 +4,10 @@ import type {
   ResponseInput,
 } from "openai/resources/responses/responses";
 
-import { parseFailureFixture } from "./__fixtures__/parse-failure";
-import { receiptFixture } from "./__fixtures__/receipt";
-import { textExpenseFixture } from "./__fixtures__/text-expense";
+import { parseFailureFixture, parseFailureFixtureEn } from "./__fixtures__/parse-failure";
+import { receiptFixture, receiptFixtureEn } from "./__fixtures__/receipt";
+import { textExpenseFixture, textExpenseFixtureEn } from "./__fixtures__/text-expense";
+import type { Locale } from "@/i18n/context";
 import {
   expenseCategories,
   type ExpenseCategory,
@@ -219,7 +220,7 @@ function failureResult(
   const originalInput =
     input.type === "clarification" ? input.context.originalInput : input;
   return {
-    category: "其他",
+    category: expenseCategories[7],
     totalCents: 0,
     participantMemberIds: [],
     note: originalInput.type === "text" ? originalInput.data : undefined,
@@ -233,7 +234,7 @@ function failureResult(
 
 function initialDetermined(input: OriginalParseExpenseInput): DeterminedExpenseFields {
   return {
-    category: "其他",
+    category: expenseCategories[7],
     totalCents: 0,
     participantMemberIds: [],
     note: input.type === "text" ? input.data : undefined,
@@ -333,7 +334,8 @@ function optionalString(value: unknown) {
 function normalizeModelExpense(
   value: unknown,
   input: ParseExpenseInput,
-  members: Member[]
+  members: Member[],
+  locale: Locale
 ): ParsedExpense {
   if (!value || typeof value !== "object") return failureResult(input);
   const raw = value as Partial<ModelExpense>;
@@ -361,7 +363,7 @@ function normalizeModelExpense(
       : undefined;
   const category = expenseCategories.includes(raw.category as ExpenseCategory)
     ? (raw.category as ExpenseCategory)
-    : "其他";
+    : expenseCategories[7];
 
   const current: DeterminedExpenseFields = {
     merchantName: optionalString(raw.merchantName),
@@ -384,7 +386,7 @@ function normalizeModelExpense(
     ? {
         merchantName: current.merchantName ?? previous.merchantName,
         category:
-          current.category === "其他" && previous.category !== "其他"
+          current.category === expenseCategories[7] && previous.category !== expenseCategories[7]
             ? previous.category
             : current.category,
         totalCents: current.totalCents > 0 ? current.totalCents : previous.totalCents,
@@ -409,7 +411,7 @@ function normalizeModelExpense(
           { question: input.context.pendingQuestion, answer: input.data.trim() },
         ]
       : [];
-  const missingQuestion = requiredFieldQuestion(determined);
+  const missingQuestion = requiredFieldQuestion(determined, locale);
   if (!missingQuestion) return { ...determined, needsClarification: false };
   if (history.length >= 3) {
     return {
@@ -434,19 +436,21 @@ function normalizeModelExpense(
   };
 }
 
-function requiredFieldQuestion(fields: DeterminedExpenseFields) {
-  if (fields.totalCents <= 0) return "这笔账的总金额是多少？";
-  if (!fields.paidByMemberId) return "这笔账是谁付款的？";
-  if (fields.participantMemberIds.length === 0) return "这笔账由哪些成员参与分摊？";
+function requiredFieldQuestion(fields: DeterminedExpenseFields, locale: Locale) {
+  if (fields.totalCents <= 0) return locale === "zh" ? "这笔账的总金额是多少？" : "What was the total amount?";
+  if (!fields.paidByMemberId) return locale === "zh" ? "这笔账是谁付款的？" : "Who paid for this expense?";
+  if (fields.participantMemberIds.length === 0) return locale === "zh" ? "这笔账由哪些成员参与分摊？" : "Which members should share this expense?";
   return null;
 }
 
-function mockResult(input: ParseExpenseInput) {
-  if (input.data.includes("mock-failure")) return parseFailureFixture;
-  return input.type === "image" ? receiptFixture : textExpenseFixture;
+function mockResult(input: ParseExpenseInput, locale: Locale) {
+  if (input.data.includes("mock-failure")) return locale === "zh" ? parseFailureFixture : parseFailureFixtureEn;
+  return input.type === "image"
+    ? locale === "zh" ? receiptFixture : receiptFixtureEn
+    : locale === "zh" ? textExpenseFixture : textExpenseFixtureEn;
 }
 
-function buildModelInput(input: ParseExpenseInput, members: Member[]) {
+function buildModelInput(input: ParseExpenseInput, members: Member[], locale: Locale) {
   const directory = members.map(({ id, displayName, isCurrentUser }) => ({
     id,
     displayName,
@@ -454,6 +458,8 @@ function buildModelInput(input: ParseExpenseInput, members: Member[]) {
   }));
   const instructions = [
     "Extract exactly one shared expense.",
+    "The user's expense description may be written in Chinese or English; understand either language.",
+    `Write note and clarificationQuestion in ${locale === "zh" ? "Simplified Chinese" : "English"}.`,
     "All monetary output fields are yuan numbers, never cents.",
     "Only use IDs from the supplied member directory.",
     "Match first-person references such as 我 to the member marked isCurrentUser.",
@@ -554,13 +560,14 @@ export async function requestStructuredOutput(
   return JSON.parse(response.output_text) as unknown;
 }
 
-async function callModel(input: ParseExpenseInput, members: Member[]) {
-  return requestStructuredOutput(buildModelInput(input, members), EXPENSE_RESPONSE_FORMAT);
+async function callModel(input: ParseExpenseInput, members: Member[], locale: Locale) {
+  return requestStructuredOutput(buildModelInput(input, members, locale), EXPENSE_RESPONSE_FORMAT);
 }
 
 export async function parseExpense(
   input: ParseExpenseInput,
-  members: Member[]
+  members: Member[],
+  locale: Locale = "zh"
 ): Promise<ParsedExpense> {
   if (input.type === "text") {
     try {
@@ -568,7 +575,7 @@ export async function parseExpense(
     } catch (error) {
       if (error instanceof LimitValidationError) {
         console.log(`[parseExpense] local-block reason=input-limit length=${Array.from(input.data).length}`);
-        return localClarificationResult(input, "", error.message);
+        return localClarificationResult(input, "", locale === "zh" ? `AI 输入不能超过 500 个字符` : "AI input cannot exceed 500 characters");
       }
       throw error;
     }
@@ -579,7 +586,7 @@ export async function parseExpense(
     ];
     if (reasons.length > 0) {
       console.log(`[parseExpense] local-block reason=${reasons.join(",")}`);
-      return localClarificationResult(input, "请补充金额等信息");
+      return localClarificationResult(input, locale === "zh" ? "请补充金额等信息" : "Please add an amount and other expense details");
     }
   } else if (input.type === "clarification") {
     try {
@@ -592,7 +599,7 @@ export async function parseExpense(
           needsClarification: true,
           clarificationQuestion: input.context.pendingQuestion,
           clarificationContext: input.context,
-          validationError: error.message,
+          validationError: locale === "zh" ? `AI 输入不能超过 500 个字符` : "AI input cannot exceed 500 characters",
         };
       }
       throw error;
@@ -605,11 +612,11 @@ export async function parseExpense(
   );
 
   if (useMock) {
-    return normalizeModelExpense(mockResult(input), input, members);
+    return normalizeModelExpense(mockResult(input, locale), input, members, locale);
   }
 
   try {
-    return normalizeModelExpense(await callModel(input, members), input, members);
+    return normalizeModelExpense(await callModel(input, members, locale), input, members, locale);
   } catch (error) {
     const diagnostics = errorDiagnostics(error);
     console.error("[parseExpense] real branch failed", {

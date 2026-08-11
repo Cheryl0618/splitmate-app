@@ -49,3 +49,15 @@ export const receiptFixture = {
   unresolvedNames: [],
   confidence: "high",
 } as const;
+
+export const receiptFixtureEn = {
+  ...receiptFixture,
+  items: [
+    { ...receiptFixture.items[0], name: "Milk" },
+    { ...receiptFixture.items[1], name: "Coffee beans" },
+    { ...receiptFixture.items[2], name: "Fruit" },
+    { ...receiptFixture.items[3], name: "Cleaning supplies" },
+    { ...receiptFixture.items[4], name: "Bread and eggs" },
+  ],
+  note: "Grocery run",
+} as const;

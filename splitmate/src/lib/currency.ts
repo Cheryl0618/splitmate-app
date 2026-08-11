@@ -27,17 +27,3 @@ export const currencyLabels: Record<Currency, string> = {
   KRW: "韩元（KRW）",
   TWD: "新台币（TWD）",
 };
-
-export const currencySymbols: Record<Currency, string> = {
-  CNY: "¥",
-  USD: "$",
-  EUR: "€",
-  GBP: "£",
-  JPY: "¥",
-  CAD: "CA$",
-  AUD: "A$",
-  HKD: "HK$",
-  SGD: "S$",
-  KRW: "₩",
-  TWD: "NT$",
-};

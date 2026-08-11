@@ -13,7 +13,7 @@ export default async function GroupSettingsPage({
   const group = getExpenseFormGroup(id);
   if (!group) notFound();
   return (
-    <main className="min-h-screen bg-[#f6f8f7] px-4 py-10 text-slate-900">
+    <main className="min-h-screen bg-bg px-4 py-10 text-ink">
       <div className="mx-auto max-w-xl">
         <GroupForm
           embedded

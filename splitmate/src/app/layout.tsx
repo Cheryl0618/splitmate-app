@@ -1,24 +1,32 @@
 import type { Metadata } from "next";
+import { Instrument_Serif } from "next/font/google";
 import { SiteNav } from "@/components/site-nav";
+import { I18nProvider } from "@/i18n/context";
 import { CurrentUserProvider } from "@/lib/current-user";
-import { getAccountUsers } from "@/server/settings";
 import "./globals.css";
 
+const brandFont = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  display: "swap",
+  variable: "--font-brand",
+});
+
 export const metadata: Metadata = {
-  title: "SplitMate",
-  description: "多人共享记账与智能结算",
+  title: "Quits",
+  description: "Shared expenses and clean settlements",
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const users = getAccountUsers();
-
   return (
-    <html lang="zh-CN" className="h-full antialiased">
+    <html lang="zh-CN" className={`${brandFont.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
-        <CurrentUserProvider users={users}>
-          <SiteNav />
-          {children}
-        </CurrentUserProvider>
+        <I18nProvider>
+          <CurrentUserProvider>
+            <SiteNav />
+            {children}
+          </CurrentUserProvider>
+        </I18nProvider>
       </body>
     </html>
   );

@@ -1,5 +1,6 @@
 import { getOrGenerateInsights } from "@/server/insights";
 import { getRelationshipInsightStats } from "@/server/relationship-stats";
+import { requestLocale } from "@/i18n/server";
 
 async function respond(
   request: Request,
@@ -17,7 +18,7 @@ async function respond(
     "relationship",
     result.scopeId,
     result.stats,
-    { force }
+    { force, locale: requestLocale(request) }
   );
   return Response.json({ insights: cached.insights });
 }

@@ -1,6 +1,7 @@
 import type { Currency } from "./currency";
 import type { ExpenseCategory } from "./expense-input";
 import { formatCents } from "./format";
+import type { Locale } from "@/i18n/context";
 
 export interface FilterableExpense {
   description: string;
@@ -12,9 +13,10 @@ export function filterExpenses<T extends FilterableExpense>(
   expenses: T[],
   query: string,
   categories: ExpenseCategory[],
-  currency: Currency
+  currency: Currency,
+  locale: Locale = "en"
 ) {
-  const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
+  const normalizedQuery = query.trim().toLocaleLowerCase(locale === "zh" ? "zh-CN" : "en-US");
   const selectedCategories = new Set(categories);
 
   return expenses.filter((expense) => {
@@ -24,10 +26,10 @@ export function filterExpenses<T extends FilterableExpense>(
     if (!normalizedQuery) return true;
 
     return (
-      expense.description.toLocaleLowerCase("zh-CN").includes(normalizedQuery) ||
+      expense.description.toLocaleLowerCase(locale === "zh" ? "zh-CN" : "en-US").includes(normalizedQuery) ||
       (expense.amountCents / 100).toFixed(2).includes(normalizedQuery) ||
-      formatCents(expense.amountCents, currency)
-        .toLocaleLowerCase("zh-CN")
+      formatCents(expense.amountCents, currency, locale)
+        .toLocaleLowerCase(locale === "zh" ? "zh-CN" : "en-US")
         .includes(normalizedQuery)
     );
   });

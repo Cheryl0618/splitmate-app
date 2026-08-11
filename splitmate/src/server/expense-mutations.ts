@@ -157,7 +157,7 @@ function validateMembers(
       )
       .get(groupId, currentUserId);
     if (!membership) {
-      throw new ExpenseMutationError("当前用户不属于这个群组", 403);
+      throw new ExpenseMutationError("你不属于这个群组", 403);
     }
   } finally {
     database.close();
@@ -170,7 +170,7 @@ export function createExpense(
   value: unknown
 ) {
   if (!currentUserId) {
-    throw new ExpenseMutationError("缺少当前用户", 401);
+    throw new ExpenseMutationError("请先完成首次设置", 401);
   }
 
   const { input, shares, date } = validateInput(value);
@@ -244,7 +244,7 @@ export function updateExpense(
   value: unknown
 ) {
   if (!currentUserId) {
-    throw new ExpenseMutationError("缺少当前用户", 401);
+    throw new ExpenseMutationError("请先完成首次设置", 401);
   }
 
   const { input, shares, date } = validateInput(value);
@@ -311,7 +311,7 @@ export function updateExpense(
 
 export function deleteExpense(expenseId: string, currentUserId: string) {
   if (!currentUserId) {
-    throw new ExpenseMutationError("缺少当前用户", 401);
+    throw new ExpenseMutationError("请先完成首次设置", 401);
   }
 
   const database = openWritableDatabase();

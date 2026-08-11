@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/empty-state";
 import { RelationshipView } from "@/components/relationship-view";
 import { useCurrentUser } from "@/lib/current-user";
 import type { RelationshipPageData } from "@/server/relationships";
+import { useT } from "@/i18n/context";
 
 export function RelationshipPageClient({
   groupId,
@@ -15,13 +16,14 @@ export function RelationshipPageClient({
   memberId: string;
 }) {
   const { currentUserId } = useCurrentUser();
+  const { locale, t } = useT();
   const [data, setData] = useState<RelationshipPageData | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
     void fetch(`/api/groups/${groupId}/members/${memberId}/relationship`, {
-      headers: { "x-demo-user-id": currentUserId },
+      headers: { "x-demo-user-id": currentUserId, "x-ui-locale": locale },
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -35,17 +37,17 @@ export function RelationshipPageClient({
         }
       });
     return () => controller.abort();
-  }, [currentUserId, groupId, memberId]);
+  }, [currentUserId, groupId, locale, memberId]);
 
   if (failed) {
     return (
-      <main className="min-h-screen bg-[#f6f8f7] px-4 py-12">
+      <main className="min-h-screen bg-bg px-4 py-12">
         <div className="mx-auto max-w-3xl">
           <EmptyState
-            title="关系画像暂时无法加载"
-            description="返回群组后可以继续查看账单，稍后再打开关系画像。"
+            title={t("relationship.loadError")}
+            description={t("relationship.loadErrorDescription")}
             actionHref={`/groups/${groupId}`}
-            actionLabel="返回群组"
+            actionLabel={t("relationship.backGroup")}
           />
         </div>
       </main>
@@ -54,8 +56,8 @@ export function RelationshipPageClient({
 
   if (!data) {
     return (
-      <main className="min-h-screen bg-[#f6f8f7] px-4 py-12">
-        <div className="mx-auto h-72 max-w-3xl animate-pulse rounded-3xl bg-white" aria-label="正在加载关系画像" />
+      <main className="min-h-screen bg-bg px-4 py-12">
+        <div className="mx-auto h-72 max-w-3xl animate-pulse rounded-[14px] bg-surface" aria-label={t("relationship.loading")} />
       </main>
     );
   }

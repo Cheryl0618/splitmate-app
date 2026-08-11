@@ -1,15 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { RefreshCw } from "lucide-react";
 
-import { formatCents } from "@/lib/format";
+import { IconButton } from "@/components/ui/icon-action";
 import { useCurrentUser } from "@/lib/current-user";
 import type { Insight, InsightKind } from "@/lib/consumption-summary";
 import type { Currency } from "@/lib/currency";
+import { formatInsightText } from "@/lib/insight-format";
+import { useT } from "@/i18n/context";
 
 const KIND_STYLES: Record<InsightKind, string> = {
-  fact: "bg-teal-500",
-  trend: "bg-sky-500",
+  fact: "bg-accent-mid",
+  trend: "bg-accent-light",
 };
 
 function isInsight(value: unknown): value is Insight {
@@ -18,21 +21,23 @@ function isInsight(value: unknown): value is Insight {
   return (
     typeof item.text === "string" &&
     ["fact", "trend"].includes(String(item.kind)) &&
-    (item.relatedCents === undefined || Number.isSafeInteger(item.relatedCents))
+    (item.relatedCents === undefined ||
+      (Array.isArray(item.relatedCents) &&
+        item.relatedCents.every((cents) => Number.isSafeInteger(cents))))
   );
 }
 
-function LoadingCard() {
+function LoadingCard({ label }: { label: string }) {
   return (
     <section
-      aria-label="正在生成消费总结"
+      aria-label={label}
       aria-busy="true"
-      className="min-h-44 animate-pulse rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)] sm:p-6"
+      className="min-h-44 animate-pulse rounded-[14px] bg-surface p-5 sm:p-6"
     >
-      <div className="h-5 w-28 rounded bg-slate-200" />
+      <div className="h-5 w-28 rounded bg-inset" />
       <div className="mt-5 space-y-3">
-        <div className="h-11 rounded-2xl bg-slate-100" />
-        <div className="h-11 rounded-2xl bg-slate-100" />
+        <div className="h-11 rounded-[14px] bg-inset" />
+        <div className="h-11 rounded-[14px] bg-inset" />
       </div>
     </section>
   );
@@ -40,12 +45,13 @@ function LoadingCard() {
 
 export function ConsumptionSummaryPanel({
   endpoint,
-  currency = "CNY",
+  currency,
 }: {
   endpoint: string;
-  currency?: Currency;
+  currency: Currency;
 }) {
   const { currentUserId } = useCurrentUser();
+  const { locale, t } = useT();
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -57,7 +63,7 @@ export function ConsumptionSummaryPanel({
       try {
         const response = await fetch(endpoint, {
           method: force ? "POST" : "GET",
-          headers: { "x-demo-user-id": currentUserId },
+          headers: { "x-demo-user-id": currentUserId, "x-ui-locale": locale },
           signal,
         });
         if (!response.ok) throw new Error(`Insight request failed: ${response.status}`);
@@ -81,7 +87,7 @@ export function ConsumptionSummaryPanel({
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [currentUserId, endpoint]
+    [currentUserId, endpoint, locale]
   );
 
   useEffect(() => {
@@ -95,45 +101,45 @@ export function ConsumptionSummaryPanel({
     };
   }, [load]);
 
-  if (loading && insights.length === 0) return <LoadingCard />;
+  if (loading && insights.length === 0) return <LoadingCard label={t("summary.generating")} />;
   if (failed || insights.length === 0) return null;
 
+  const displayInsights = insights.flatMap((insight) => {
+    const text = formatInsightText(insight, currency, locale);
+    return text === null ? [] : [{ insight, text }];
+  });
+  if (displayInsights.length === 0) return null;
+
   return (
-    <section className="min-h-44 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)] sm:p-6">
+    <section className="min-h-44 rounded-[14px] bg-ink p-5 text-surface sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold">AI 消费总结</h2>
-          <p className="mt-1 text-xs text-slate-400">根据当前聚合统计生成</p>
+          <h2 className="text-lg font-bold">{t("summary.title")}</h2>
+          <p className="mt-1 text-xs text-ink-soft">{t("summary.description")}</p>
         </div>
-        <button
-          type="button"
+        <IconButton
+          icon={RefreshCw}
+          label={t(loading ? "summary.regenerating" : "summary.regenerate")}
           disabled={loading}
           onClick={() => void load(true)}
-          className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:border-teal-300 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {loading ? "生成中…" : "重新生成"}
-        </button>
+          className="bg-surface"
+        />
       </div>
 
       <ul className="mt-5 grid gap-3 sm:grid-cols-2">
-        {insights.map((insight, index) => (
+        {displayInsights.map(({ insight, text }, index) => (
           <li
             key={`${insight.kind}-${insight.text}-${index}`}
-            className="flex min-w-0 items-start gap-3 rounded-2xl bg-slate-50 px-4 py-3"
+            className="flex min-w-0 items-start gap-3 rounded-[14px] bg-inset px-4 py-3"
           >
             <span
               className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-sm ${KIND_STYLES[insight.kind]}`}
               aria-hidden="true"
             />
             <div className="min-w-0">
-              <p className="text-sm font-semibold leading-6 text-slate-700">
-                {insight.text}
+              <p className="text-sm font-semibold leading-6 text-ink">
+                {text}
               </p>
-              {insight.relatedCents !== undefined ? (
-                <span className="mt-1 inline-flex rounded-full bg-white px-2 py-0.5 text-xs font-bold text-teal-700">
-                  {formatCents(insight.relatedCents, currency)}
-                </span>
-              ) : null}
             </div>
           </li>
         ))}

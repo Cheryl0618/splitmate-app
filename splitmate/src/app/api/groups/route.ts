@@ -1,4 +1,5 @@
 import { createGroup, GroupMutationError } from "@/server/group-mutations";
+import { localizedError, serverT } from "@/i18n/server";
 
 export async function POST(request: Request) {
   try {
@@ -10,8 +11,8 @@ export async function POST(request: Request) {
     return Response.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof GroupMutationError) {
-      return Response.json({ error: error.message }, { status: error.status });
+      return Response.json({ error: localizedError(request, error.message, "group.saveError") }, { status: error.status });
     }
-    return Response.json({ error: "创建群组失败，请重试" }, { status: 500 });
+    return Response.json({ error: serverT(request, "group.saveError") }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@ import {
   addGroupMembers,
   GroupMutationError,
 } from "@/server/group-mutations";
+import { localizedError, serverT } from "@/i18n/server";
 
 export async function POST(
   request: Request,
@@ -18,8 +19,8 @@ export async function POST(
     return Response.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof GroupMutationError) {
-      return Response.json({ error: error.message }, { status: error.status });
+      return Response.json({ error: localizedError(request, error.message, "members.addError") }, { status: error.status });
     }
-    return Response.json({ error: "添加成员失败，请重试" }, { status: 500 });
+    return Response.json({ error: serverT(request, "members.addError") }, { status: 500 });
   }
 }

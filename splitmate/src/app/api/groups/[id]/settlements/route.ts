@@ -2,6 +2,7 @@ import {
   createSettlement,
   SettlementMutationError,
 } from "@/server/settlement-mutations";
+import { localizedError, serverT } from "@/i18n/server";
 
 export async function POST(
   request: Request,
@@ -18,8 +19,8 @@ export async function POST(
     return Response.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof SettlementMutationError) {
-      return Response.json({ error: error.message }, { status: error.status });
+      return Response.json({ error: localizedError(request, error.message, "settle.confirmError") }, { status: error.status });
     }
-    return Response.json({ error: "确认转账失败，请重试" }, { status: 500 });
+    return Response.json({ error: serverT(request, "settle.confirmError") }, { status: 500 });
   }
 }

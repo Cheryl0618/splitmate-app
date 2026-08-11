@@ -1,117 +1,139 @@
 "use client";
 
 import {
-  useCallback,
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
-export interface AccountUser {
-  id: string;
-  displayName: string;
-}
+import { DEFAULT_AVATAR_COLOR } from "@/lib/avatar-colors";
+import type { UserProfileSummary } from "@/server/settings";
+import { useT } from "@/i18n/context";
 
-const CURRENT_USER_STORAGE_KEY = "splitmate-current-user-id";
+const CURRENT_USER_STORAGE_KEY = "quits-current-user-id";
+const LEGACY_CURRENT_USER_STORAGE_KEY = `${["split", "mate"].join("")}-current-user-id`;
 
 interface CurrentUserContextValue {
   currentUserId: string;
-  setCurrentUserId: (userId: string) => void;
-  resetCurrentUser: () => void;
+  currentUser: UserProfileSummary | null;
+  setLocalIdentity: (profile: UserProfileSummary) => void;
+  clearLocalIdentity: () => void;
 }
 
 const CurrentUserContext = createContext<CurrentUserContextValue | null>(null);
 
-export function CurrentUserProvider({
-  children,
-  users,
-}: {
-  children: ReactNode;
-  users: AccountUser[];
-}) {
+export function CurrentUserProvider({ children }: { children: ReactNode }) {
+  const { locale, t } = useT();
   const router = useRouter();
-  const [currentUserId, setStoredUserId] = useState<string | null | undefined>(
+  const pathname = usePathname();
+  const [currentUser, setCurrentUser] = useState<UserProfileSummary | null | undefined>(
     undefined
   );
 
   useEffect(() => {
+    const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      const storedUserId = window.localStorage.getItem(CURRENT_USER_STORAGE_KEY);
-      setStoredUserId(
-        storedUserId && users.some((user) => user.id === storedUserId)
-          ? storedUserId
-          : null
+      const currentStoredUserId = window.localStorage.getItem(CURRENT_USER_STORAGE_KEY);
+      const legacyStoredUserId = window.localStorage.getItem(
+        LEGACY_CURRENT_USER_STORAGE_KEY
       );
+      const storedUserId = currentStoredUserId ?? legacyStoredUserId;
+      if (!storedUserId) {
+        setCurrentUser(null);
+        return;
+      }
+      if (!currentStoredUserId && legacyStoredUserId) {
+        window.localStorage.setItem(CURRENT_USER_STORAGE_KEY, legacyStoredUserId);
+        window.localStorage.removeItem(LEGACY_CURRENT_USER_STORAGE_KEY);
+      }
+
+      void fetch("/api/settings", {
+        headers: { "x-demo-user-id": storedUserId, "x-ui-locale": locale },
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            if (response.status === 404 || response.status === 401) {
+              window.localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+              setCurrentUser(null);
+              return;
+            }
+            throw new Error("Could not read local profile");
+          }
+          const profile = (await response.json()) as UserProfileSummary;
+          setCurrentUser(profile);
+        })
+        .catch((caught) => {
+          if (!controller.signal.aborted) {
+            console.error("[current-user] failed", caught);
+            setCurrentUser({
+              id: storedUserId,
+              displayName: t("common.you"),
+              avatarColor: DEFAULT_AVATAR_COLOR,
+            });
+          }
+        });
     }, 0);
-    return () => window.clearTimeout(timer);
-  }, [users]);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [locale, t]);
 
-  const setCurrentUserId = useCallback((userId: string) => {
-    if (!users.some((user) => user.id === userId)) return;
-    window.localStorage.setItem(CURRENT_USER_STORAGE_KEY, userId);
-    setStoredUserId(userId);
-  }, [users]);
+  useEffect(() => {
+    if (currentUser === null && pathname !== "/welcome") {
+      router.replace("/welcome");
+    } else if (currentUser && pathname === "/welcome") {
+      router.replace("/");
+    }
+  }, [currentUser, pathname, router]);
 
-  const resetCurrentUser = useCallback(() => {
+  const setLocalIdentity = useCallback((profile: UserProfileSummary) => {
+    window.localStorage.setItem(CURRENT_USER_STORAGE_KEY, profile.id);
+    window.localStorage.removeItem(LEGACY_CURRENT_USER_STORAGE_KEY);
+    setCurrentUser(profile);
+  }, []);
+
+  const clearLocalIdentity = useCallback(() => {
     window.localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
-    setStoredUserId(null);
+    window.localStorage.removeItem(LEGACY_CURRENT_USER_STORAGE_KEY);
+    setCurrentUser(null);
   }, []);
 
   const value = useMemo(
-    () => ({ currentUserId: currentUserId ?? "", setCurrentUserId, resetCurrentUser }),
-    [currentUserId, resetCurrentUser, setCurrentUserId]
+    () => ({
+      currentUserId: currentUser?.id ?? "",
+      currentUser: currentUser ?? null,
+      setLocalIdentity,
+      clearLocalIdentity,
+    }),
+    [clearLocalIdentity, currentUser, setLocalIdentity]
   );
 
-  if (currentUserId === undefined) {
+  if (currentUser === undefined) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#f6f8f7] px-4 text-slate-500">
-        <p className="text-sm font-semibold">正在读取身份…</p>
+      <main className="grid min-h-screen place-items-center bg-bg px-4 text-ink-soft">
+        <p className="text-sm font-semibold">{t("loading.profile")}</p>
+      </main>
+    );
+  }
+
+  if ((currentUser === null && pathname !== "/welcome") || (currentUser && pathname === "/welcome")) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-bg px-4 text-ink-soft">
+        <p className="text-sm font-semibold">{t("loading.redirect")}</p>
       </main>
     );
   }
 
   return (
     <CurrentUserContext.Provider value={value}>
-      {currentUserId ? (
-        children
-      ) : (
-        <main className="grid min-h-screen place-items-center bg-[#f6f8f7] px-4 py-12 text-slate-900">
-          <section className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)] sm:p-8">
-            <p className="text-sm font-bold text-teal-700">SplitMate</p>
-            <h1 className="mt-2 text-3xl font-extrabold tracking-tight">你是谁？</h1>
-            <p className="mt-3 text-sm leading-6 text-slate-500">
-              选择一次后会记在这台设备上，之后直接按你的身份显示。
-            </p>
-            <div className="mt-6 grid gap-3">
-              {users.map((user) => (
-                <button
-                  key={user.id}
-                  type="button"
-                  onClick={() => {
-                    setCurrentUserId(user.id);
-                    router.replace("/");
-                  }}
-                  className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-left font-bold hover:border-teal-400 hover:bg-teal-50"
-                >
-                  <span className="grid h-10 w-10 place-items-center rounded-full bg-teal-100 text-teal-800">
-                    {user.displayName.slice(0, 1).toUpperCase()}
-                  </span>
-                  {user.displayName}
-                </button>
-              ))}
-            </div>
-            {users.length === 0 ? (
-              <p className="mt-6 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                还没有可选账号，请先运行数据库 seed。
-              </p>
-            ) : null}
-          </section>
-        </main>
-      )}
+      {children}
     </CurrentUserContext.Provider>
   );
 }

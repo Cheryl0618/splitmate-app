@@ -55,4 +55,15 @@ describe("insight cache", () => {
     expect(second.insights).toEqual(first.insights);
     expect(generationCount).toBe(1);
   });
+
+  it("keeps Chinese and English summaries in separate cache entries", async () => {
+    let generationCount = 0;
+    const generator: typeof generateInsights = async (input, type, locale) => {
+      generationCount += 1;
+      return generateInsights(input, type, locale);
+    };
+    await getOrGenerateInsights("group", TEST_SCOPE_ID, stats, { generator, locale: "zh" });
+    await getOrGenerateInsights("group", TEST_SCOPE_ID, stats, { generator, locale: "en" });
+    expect(generationCount).toBe(2);
+  });
 });

@@ -1,24 +1,53 @@
 @import "tailwindcss";
+@config "../../tailwind.config.ts";
 
 :root {
-  --background: #f6f8f7;
-  --foreground: #0f172a;
+  --color-bg: #EFEEEC;
+  --color-surface: #FFFFFF;
+  --color-inset: #F7F6F5;
+  --color-ink: #1A1A1A;
+  --color-ink-soft: #9A9793;
+  --color-line: #E8E6E3;
+  --color-accent: #E8735A;
+  --color-accent-hover: #D9624A;
+  --color-accent-mid: #F3AC9B;
+  --color-accent-light: #FAD9D1;
+  --color-accent-faint: #FDF0EC;
+  --color-avatar-coral: #E8735A;
+  --color-avatar-brick: #C4553E;
+  --color-avatar-ochre: #D99B5F;
+  --color-avatar-olive: #7A8B6F;
+  --color-avatar-slate: #6B7B8C;
+  --color-avatar-mauve: #8A7288;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-ink);
   --font-sans: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 body {
   max-width: 100%;
   overflow-x: clip;
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--color-bg);
+  color: var(--color-ink);
   font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
+}
+
+.amount {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  font-weight: 500;
+}
+
+.brand-wordmark {
+  font-family: var(--font-brand);
+  font-weight: 400;
+  letter-spacing: -0.5px;
+  line-height: 1.05;
 }
 
 button,

@@ -73,6 +73,17 @@ describe("parseExpense in mock mode", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("returns English fixture copy for an English interface", async () => {
+    const result = await parseExpense(
+      { type: "text", data: "dinner last night, I paid 85, split with Lucy and Tom" },
+      members,
+      "en"
+    );
+    expect(result.note).toContain("Dinner last night");
+    expect(result.note).not.toContain("今晚");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("converts every fixture money field to integer cents", async () => {
     const results = await Promise.all([
       parseExpense({ type: "image", data: "data:image/jpeg;base64,receipt" }, members),
@@ -190,6 +201,16 @@ describe("parseExpense mode selection", () => {
     expect(log).toHaveBeenCalledWith(
       "[parseExpense] local-block reason=too-short,missing-number"
     );
+  });
+
+  it("localizes a clarification prompt without calling the model", async () => {
+    vi.stubEnv("MOCK_AI", "false");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const result = await parseExpense({ type: "text", data: "dinner" }, members, "en");
+    expect(result.clarificationQuestion).toBe("Please add an amount and other expense details");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("accumulates clarification context and stops after three answers", async () => {

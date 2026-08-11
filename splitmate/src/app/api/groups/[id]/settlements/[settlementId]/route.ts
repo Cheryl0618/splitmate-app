@@ -2,6 +2,7 @@ import {
   deleteSettlement,
   SettlementMutationError,
 } from "@/server/settlement-mutations";
+import { localizedError, serverT } from "@/i18n/server";
 
 export async function DELETE(
   request: Request,
@@ -19,8 +20,8 @@ export async function DELETE(
     return Response.json(result);
   } catch (error) {
     if (error instanceof SettlementMutationError) {
-      return Response.json({ error: error.message }, { status: error.status });
+      return Response.json({ error: localizedError(request, error.message, "settle.undoError") }, { status: error.status });
     }
-    return Response.json({ error: "撤销还款失败，请重试" }, { status: 500 });
+    return Response.json({ error: serverT(request, "settle.undoError") }, { status: 500 });
   }
 }

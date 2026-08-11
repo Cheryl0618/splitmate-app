@@ -3,6 +3,7 @@ import {
   ExpenseMutationError,
   updateExpense,
 } from "@/server/expense-mutations";
+import { localizedError, serverT } from "@/i18n/server";
 
 export async function PUT(
   request: Request,
@@ -19,9 +20,9 @@ export async function PUT(
     return Response.json(result);
   } catch (error) {
     if (error instanceof ExpenseMutationError) {
-      return Response.json({ error: error.message }, { status: error.status });
+      return Response.json({ error: localizedError(request, error.message, "expense.saveError") }, { status: error.status });
     }
-    return Response.json({ error: "保存账单失败，请重试" }, { status: 500 });
+    return Response.json({ error: serverT(request, "expense.saveError") }, { status: 500 });
   }
 }
 
@@ -38,8 +39,8 @@ export async function DELETE(
     return Response.json(result);
   } catch (error) {
     if (error instanceof ExpenseMutationError) {
-      return Response.json({ error: error.message }, { status: error.status });
+      return Response.json({ error: localizedError(request, error.message, "expense.deleteError") }, { status: error.status });
     }
-    return Response.json({ error: "删除账单失败，请重试" }, { status: 500 });
+    return Response.json({ error: serverT(request, "expense.deleteError") }, { status: 500 });
   }
 }

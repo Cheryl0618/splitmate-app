@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { avatarColorOptions, type AvatarColor } from "@/lib/avatar-colors";
 import { supportedCurrencies, type Currency } from "@/lib/currency";
 import { validateMemberCount } from "@/lib/limits";
 import { LimitValidationError } from "@/lib/limits";
@@ -42,6 +43,7 @@ function parseGroupInput(value: unknown) {
 interface UserRow {
   id: string;
   displayName: string;
+  avatarColor: AvatarColor;
 }
 
 function validateGroupMemberCount(memberCount: number) {
@@ -70,31 +72,38 @@ function resolveMembers(
   );
   const existingNames = new Set(existingMembers.map((member) => member.displayName));
 
-  return names.flatMap((displayName) => {
+  const occupiedColorCount = Math.max(existingMembers.length, 1);
+  return names.flatMap((displayName, index) => {
     const user = userByName.get(displayName);
     if (existingNames.has(displayName)) return [];
     if (user?.id === currentUserId || (user && existingUserIds.has(user.id))) return [];
-    return [{ displayName, userId: user?.id ?? null }];
+    return [{
+      displayName,
+      userId: user?.id ?? null,
+      avatarColor:
+        user?.avatarColor ??
+        avatarColorOptions[(occupiedColorCount + index) % avatarColorOptions.length].value,
+    }];
   });
 }
 
 export function createGroup(currentUserId: string, value: unknown) {
-  if (!currentUserId) throw new GroupMutationError("缺少当前用户", 401);
+  if (!currentUserId) throw new GroupMutationError("请先完成首次设置", 401);
   const input = parseGroupInput(value);
   const database = openDatabase();
-  let user: { id: string; displayName: string } | undefined;
+  let user: UserRow | undefined;
   let users: UserRow[] = [];
   try {
     user = database
-      .prepare(`SELECT id, displayName FROM "User" WHERE id = ?`)
-      .get(currentUserId) as { id: string; displayName: string } | undefined;
+      .prepare(`SELECT id, displayName, avatarColor FROM "User" WHERE id = ?`)
+      .get(currentUserId) as UserRow | undefined;
     users = database
-      .prepare(`SELECT id, displayName FROM "User" ORDER BY createdAt, id`)
+      .prepare(`SELECT id, displayName, avatarColor FROM "User" ORDER BY createdAt, id`)
       .all() as UserRow[];
   } finally {
     database.close();
   }
-  if (!user) throw new GroupMutationError("当前用户不存在", 404);
+  if (!user) throw new GroupMutationError("本机信息已失效，请重置后重新开始", 404);
   const additionalMembers = resolveMembers(input.memberNames, users, currentUserId);
   validateGroupMemberCount(1 + additionalMembers.length);
 
@@ -110,16 +119,24 @@ export function createGroup(currentUserId: string, value: unknown) {
       )
       .run(groupId, input.name, input.currency, currentUserId, now, now);
     const insertMember = writable.prepare(
-      `INSERT INTO "GroupMember" (id, groupId, userId, displayName, createdAt)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO "GroupMember" (id, groupId, userId, displayName, avatarColor, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?)`
     );
-    insertMember.run(randomUUID(), groupId, currentUserId, user.displayName, now);
+    insertMember.run(
+      randomUUID(),
+      groupId,
+      currentUserId,
+      user.displayName,
+      user.avatarColor,
+      now
+    );
     for (const member of additionalMembers) {
       insertMember.run(
         randomUUID(),
         groupId,
         member.userId,
         member.displayName,
+        member.avatarColor,
         now
       );
     }
@@ -138,7 +155,7 @@ export function addGroupMembers(
   currentUserId: string,
   value: unknown
 ) {
-  if (!currentUserId) throw new GroupMutationError("缺少当前用户", 401);
+  if (!currentUserId) throw new GroupMutationError("请先完成首次设置", 401);
   if (!value || typeof value !== "object") {
     throw new GroupMutationError("成员数据格式不正确", 400);
   }
@@ -158,9 +175,9 @@ export function addGroupMembers(
         `SELECT id FROM "GroupMember" WHERE groupId = ? AND userId = ? LIMIT 1`
       )
       .get(groupId, currentUserId);
-    if (!membership) throw new GroupMutationError("当前用户不属于这个群组", 403);
+    if (!membership) throw new GroupMutationError("你不属于这个群组", 403);
     users = database
-      .prepare(`SELECT id, displayName FROM "User" ORDER BY createdAt, id`)
+      .prepare(`SELECT id, displayName, avatarColor FROM "User" ORDER BY createdAt, id`)
       .all() as UserRow[];
     existingMembers = database
       .prepare(`SELECT userId, displayName FROM "GroupMember" WHERE groupId = ?`)
@@ -182,8 +199,8 @@ export function addGroupMembers(
   writable.exec("BEGIN IMMEDIATE");
   try {
     const insertMember = writable.prepare(
-      `INSERT INTO "GroupMember" (id, groupId, userId, displayName, createdAt)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO "GroupMember" (id, groupId, userId, displayName, avatarColor, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?)`
     );
     const now = Date.now();
     for (const member of additionalMembers) {
@@ -192,6 +209,7 @@ export function addGroupMembers(
         groupId,
         member.userId,
         member.displayName,
+        member.avatarColor,
         now
       );
     }
@@ -210,7 +228,7 @@ export function updateGroup(
   currentUserId: string,
   value: unknown
 ) {
-  if (!currentUserId) throw new GroupMutationError("缺少当前用户", 401);
+  if (!currentUserId) throw new GroupMutationError("请先完成首次设置", 401);
   const input = parseGroupInput(value);
   const database = openWritableDatabase();
   try {

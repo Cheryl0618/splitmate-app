@@ -5,3 +5,5 @@ export const parseFailureFixture = {
   unresolvedNames: [],
   confidence: "low",
 } as const;
+
+export const parseFailureFixtureEn = { ...parseFailureFixture } as const;

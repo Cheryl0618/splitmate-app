@@ -1,22 +1,45 @@
 "use client";
 
-import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ConsumptionSummaryPanel } from "@/components/consumption-summary-panel";
+import { Chip } from "@/components/ui/chip";
+import { CategoryIcon } from "@/components/ui/category-icon";
+import { IconLink } from "@/components/ui/icon-action";
 import { formatCents } from "@/lib/format";
 import type { RelationshipPageData } from "@/server/relationships";
+import { useT } from "@/i18n/context";
+import { categoryKey } from "@/i18n/category";
+
+function relationshipDuration(firstExpenseAt: string, locale: "zh" | "en", t: (key: string, values?: Record<string, string | number>) => string) {
+  const first = new Date(firstExpenseAt);
+  const now = new Date();
+  const months = Math.max(1, (now.getUTCFullYear() - first.getUTCFullYear()) * 12 + now.getUTCMonth() - first.getUTCMonth());
+  if (months < 12) return t("relationship.months", { count: months });
+  const years = Math.floor(months / 12);
+  const remainder = months % 12;
+  return remainder > 0
+    ? t("relationship.yearsMonths", { years, months: remainder })
+    : t("relationship.years", { count: years });
+}
+
+function formatMonth(month: string, locale: "zh" | "en") {
+  if (!month) return "—";
+  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: locale === "zh" ? "long" : "short", timeZone: "UTC" }).format(new Date(`${month}-01T00:00:00.000Z`));
+}
 
 export function RelationshipView({ data }: { data: RelationshipPageData }) {
+  const { locale, t } = useT();
   if (data.state === "not-member") {
     return (
-      <main className="min-h-screen bg-[#f6f8f7] px-4 py-12 text-slate-900">
+      <main className="min-h-screen bg-bg px-4 py-12 text-ink">
         <div className="mx-auto max-w-3xl">
           <EmptyState
-            title="你不在这个群组"
-            description="返回首页打开你已加入的群组，再查看与成员之间的消费关系。"
+            title={t("relationship.notMember")}
+            description={t("relationship.notMemberDescription")}
             actionHref={`/groups/${data.groupId}`}
-            actionLabel="返回群组"
+            actionLabel={t("relationship.backGroup")}
           />
         </div>
       </main>
@@ -25,13 +48,13 @@ export function RelationshipView({ data }: { data: RelationshipPageData }) {
 
   if (data.state === "same-member") {
     return (
-      <main className="min-h-screen bg-[#f6f8f7] px-4 py-12 text-slate-900">
+      <main className="min-h-screen bg-bg px-4 py-12 text-ink">
         <div className="mx-auto max-w-3xl">
           <EmptyState
-            title="这是你自己的成员档案"
-            description="关系画像需要两位成员。返回成员列表，选择另一位成员看看你们的共同消费。"
+            title={t("relationship.sameMember")}
+            description={t("relationship.sameMemberDescription")}
             actionHref={`/groups/${data.groupId}`}
-            actionLabel="选择其他成员"
+            actionLabel={t("relationship.chooseOther")}
           />
         </div>
       </main>
@@ -40,13 +63,14 @@ export function RelationshipView({ data }: { data: RelationshipPageData }) {
 
   if (data.state === "no-shared") {
     return (
-      <main className="min-h-screen bg-[#f6f8f7] px-4 py-12 text-slate-900">
+      <main className="min-h-screen bg-bg px-4 py-12 text-ink">
         <div className="mx-auto max-w-3xl">
           <EmptyState
-            title="你们还没有共同账单"
-            description="下一次一起消费时把你们两位都选为参与人，这里就会开始积累关系画像。"
+            title={t("relationship.noShared")}
+            description={t("relationship.noSharedDescription")}
             actionHref={`/groups/${data.groupId}/expenses/new`}
-            actionLabel="记录共同消费"
+            actionLabel={t("relationship.addShared")}
+            showPlusIcon
           />
         </div>
       </main>
@@ -54,25 +78,24 @@ export function RelationshipView({ data }: { data: RelationshipPageData }) {
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f8f7] text-slate-900">
+    <main className="min-h-screen bg-bg text-ink">
       <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 lg:px-12">
         <header>
-          <Link
+          <IconLink
             href={`/groups/${data.groupId}`}
-            className="inline-flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-slate-500 hover:text-teal-700"
-          >
-            <span aria-hidden="true">←</span>
-            返回{data.groupName}
-          </Link>
+            icon={ChevronLeft}
+            label={t("settle.backGroup", { name: data.groupName })}
+            className="bg-surface"
+          />
         </header>
 
         <div className="pb-8 pt-10 sm:pt-14">
-          <p className="text-sm font-semibold text-teal-700">关系画像</p>
+          <p className="text-sm font-semibold text-ink">{t("nav.relationship")}</p>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
-            你和 {data.targetMemberName}
+            {t("relationship.youAnd", { name: data.targetMemberName })}
           </h1>
-          <p className="mt-3 text-sm text-slate-500">
-            把垫付、实际承担和结算节奏分开看，了解你们如何一起花钱。
+          <p className="mt-3 text-sm text-ink-soft">
+            {t("relationship.description")}
           </p>
         </div>
 
@@ -82,107 +105,114 @@ export function RelationshipView({ data }: { data: RelationshipPageData }) {
             currency={data.currency}
           />
 
-          <section className="grid gap-4 sm:grid-cols-3" aria-label="关系概览">
+          <section className="grid gap-4 sm:grid-cols-3" aria-label={t("relationship.overview")}>
             {[
-              ["认识时长", data.overview.relationshipDuration],
-              ["一起消费", formatCents(data.overview.totalSharedCents, data.currency)],
-              ["一起花钱", `${data.overview.sharedExpenseCount} 次`],
+              [t("relationship.duration"), relationshipDuration(data.overview.firstSharedExpenseAt, locale, t)],
+              [t("relationship.spentTogether"), formatCents(data.overview.totalSharedCents, data.currency, locale)],
+              [t("relationship.timesTogether"), t("relationship.times", { count: data.overview.sharedExpenseCount })],
             ].map(([label, value]) => (
               <div
                 key={label}
-                className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)]"
+                className="rounded-[14px] bg-surface p-5"
               >
-                <p className="text-sm font-semibold text-slate-400">{label}</p>
-                <p className="mt-3 text-2xl font-extrabold tracking-tight">{value}</p>
+                <p className="text-sm font-semibold text-ink-soft">{label}</p>
+                <p className="amount mt-3 text-2xl font-medium tracking-tight">{value}</p>
               </div>
             ))}
           </section>
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)] sm:p-7">
+          <section className="rounded-[14px] bg-surface p-5 sm:p-7">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h2 className="text-xl font-bold">最近三个月承担比例</h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  承担是最终该谁出，不等同于当时谁先付款。
+                <h2 className="text-xl font-bold">{t("relationship.recentBurden")}</h2>
+                <p className="mt-1 text-sm text-ink-soft">
+                  {t("relationship.burdenDescription")}
                 </p>
               </div>
-              <p className="text-sm font-semibold text-slate-400">
-                {data.recentBurden.fromMonth} 至 {data.recentBurden.toMonth}
+              <p className="text-sm font-semibold text-ink-soft">
+                {t("relationship.monthRange", { from: formatMonth(data.recentBurden.fromMonth, locale), to: formatMonth(data.recentBurden.toMonth, locale) })}
               </p>
             </div>
-            <div className="mt-6 flex h-4 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className="mt-6 flex h-4 w-full overflow-hidden rounded-full bg-inset">
               <span
-                className="h-full bg-teal-600"
+                className="h-full bg-accent"
                 style={{ width: data.recentBurden.aWidth }}
-                aria-label={`你承担 ${data.recentBurden.aRatioLabel}`}
+                aria-label={t("relationship.shareRatio", { name: t("common.you"), ratio: data.recentBurden.aRatioLabel })}
               />
               <span
-                className="h-full bg-amber-400"
+                className="h-full bg-accent-light"
                 style={{ width: data.recentBurden.bWidth }}
-                aria-label={`${data.targetMemberName}承担 ${data.recentBurden.bRatioLabel}`}
+                aria-label={t("relationship.shareRatio", { name: data.targetMemberName, ratio: data.recentBurden.bRatioLabel })}
               />
             </div>
             <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-              <div className="rounded-2xl bg-teal-50 px-4 py-3 text-teal-900">
+              <div className="rounded-[14px] bg-inset px-4 py-3 text-ink">
                 <p className="font-bold">
-                  你承担 {data.recentBurden.aRatioLabel}
+                  {t("relationship.shareRatio", { name: t("common.you"), ratio: data.recentBurden.aRatioLabel })}
                 </p>
-                <p className="mt-1 text-teal-700">
-                  {formatCents(data.recentBurden.aCents, data.currency)}
+                <p className="amount mt-1 text-lg text-ink">
+                  {formatCents(data.recentBurden.aCents, data.currency, locale)}
                 </p>
               </div>
-              <div className="rounded-2xl bg-amber-50 px-4 py-3 text-amber-950">
+              <div className="rounded-[14px] bg-inset px-4 py-3 text-ink">
                 <p className="font-bold">
-                  {data.targetMemberName}承担 {data.recentBurden.bRatioLabel}
+                  {t("relationship.shareRatio", { name: data.targetMemberName, ratio: data.recentBurden.bRatioLabel })}
                 </p>
-                <p className="mt-1 text-amber-700">
-                  {formatCents(data.recentBurden.bCents, data.currency)}
+                <p className="amount mt-1 text-lg text-ink">
+                  {formatCents(data.recentBurden.bCents, data.currency, locale)}
                 </p>
               </div>
             </div>
           </section>
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)] sm:p-7">
-            <h2 className="text-xl font-bold">消费画像</h2>
-            <p className="mt-1 text-sm text-slate-500">共同账单金额最高的三个分类</p>
+          <section className="rounded-[14px] bg-surface p-5 sm:p-7">
+            <h2 className="text-xl font-bold">{t("relationship.spendingProfile")}</h2>
+            <p className="mt-1 text-sm text-ink-soft">{t("relationship.topCategories")}</p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               {data.topCategories.map((category, index) => (
-                <div key={category.category} className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-xs font-bold text-teal-700">TOP {index + 1}</p>
-                  <p className="mt-2 text-lg font-bold">{category.category}</p>
-                  <p className="mt-3 font-extrabold">{formatCents(category.cents, data.currency)}</p>
-                  <p className="mt-1 text-sm text-slate-500">{category.count} 笔</p>
+                <div key={category.category} className="rounded-[14px] bg-inset p-4">
+                  <p className="text-xs font-bold text-ink">TOP {index + 1}</p>
+                  <div className="mt-2">
+                    <Chip as="span">
+                      <CategoryIcon category={category.category} />
+                      {t(categoryKey(category.category))}
+                    </Chip>
+                  </div>
+                  <p className="amount mt-3 text-lg font-medium">{formatCents(category.cents, data.currency, locale)}</p>
+                  <p className="mt-1 text-sm text-ink-soft">{t("expense.count", { count: category.count })}</p>
                 </div>
               ))}
             </div>
           </section>
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_12px_35px_rgba(15,23,42,0.05)] sm:p-7">
-            <h2 className="text-xl font-bold">结算习惯</h2>
+          <section className="rounded-[14px] bg-surface p-5 sm:p-7">
+            <h2 className="text-xl font-bold">{t("relationship.settlementHabits")}</h2>
             <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-slate-500">平均多久结清</p>
+              <div className="rounded-[14px] bg-inset p-4">
+                <p className="text-sm font-semibold text-ink-soft">{t("relationship.avgSettle")}</p>
                 <p className="mt-2 text-2xl font-extrabold">
-                  {data.settlementHabits.avgSettleDaysLabel}
+                  {data.settlementHabits.settledExpenseCount > 0
+                    ? t("relationship.days", { count: data.settlementHabits.avgSettleDays.toFixed(1) })
+                    : t("relationship.noRecord")}
                 </p>
-                <p className="mt-2 text-xs text-slate-400">
-                  基于 {data.settlementHabits.settledExpenseCount} 笔已结清账单
-                </p>
-              </div>
-              <div className="rounded-2xl bg-teal-50 p-4 text-teal-950">
-                <p className="text-sm font-semibold">
-                  你请客 {data.settlementHabits.aPaidCount} 次
-                </p>
-                <p className="mt-2 text-xl font-extrabold">
-                  垫付 {formatCents(data.settlementHabits.aPaidCents, data.currency)}
+                <p className="mt-2 text-xs text-ink-soft">
+                  {t("relationship.basedOn", { count: data.settlementHabits.settledExpenseCount })}
                 </p>
               </div>
-              <div className="rounded-2xl bg-amber-50 p-4 text-amber-950">
+              <div className="rounded-[14px] bg-inset p-4 text-ink">
                 <p className="text-sm font-semibold">
-                  {data.targetMemberName}请客 {data.settlementHabits.bPaidCount} 次
+                  {t("relationship.paidCount", { name: t("common.you"), count: data.settlementHabits.aPaidCount })}
                 </p>
-                <p className="mt-2 text-xl font-extrabold">
-                  垫付 {formatCents(data.settlementHabits.bPaidCents, data.currency)}
+                <p className="amount mt-2 text-xl font-medium">
+                  {t("relationship.paidAmount", { amount: formatCents(data.settlementHabits.aPaidCents, data.currency, locale) })}
+                </p>
+              </div>
+              <div className="rounded-[14px] bg-inset p-4 text-ink">
+                <p className="text-sm font-semibold">
+                  {t("relationship.paidCount", { name: data.targetMemberName, count: data.settlementHabits.bPaidCount })}
+                </p>
+                <p className="amount mt-2 text-xl font-medium">
+                  {t("relationship.paidAmount", { amount: formatCents(data.settlementHabits.bPaidCents, data.currency, locale) })}
                 </p>
               </div>
             </div>

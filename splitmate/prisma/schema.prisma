@@ -41,7 +41,9 @@ enum Currency {
 model User {
   id              String        @id @default(cuid())
   displayName     String
+  avatarColor     String        @default("teal")
   email           String?       @unique
+  passwordHash    String?
   phone           String?       @unique
   ownedGroups     Group[]       @relation("GroupOwner")
   memberships     GroupMember[]
@@ -68,6 +70,7 @@ model GroupMember {
   groupId             String
   userId              String?
   displayName         String
+  avatarColor         String         @default("teal")
   group               Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user                User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   paidExpenses        Expense[]      @relation("ExpensePayer")

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { homeGroupSeed } from "../seed-data";
+import { homeGroupSeed, localizedSeedData } from "../seed-data";
 import { computeNetBalances, greedySettle, optimalSettle } from "../settlement";
 
 const homeBalances = () =>
@@ -39,6 +39,10 @@ describe("home group seed data", () => {
     expect(optimalSettle(balances)).toHaveLength(3);
   });
 
+  it("gives all five demo members distinct avatar colors", () => {
+    expect(new Set(homeGroupSeed.members.map((member) => member.avatarColor)).size).toBe(5);
+  });
+
   it("covers one year with dense, deliberately uneven demo activity", () => {
     const months = new Set(homeGroupSeed.expenses.map((expense) => expense.date.slice(0, 7)));
     const payerCounts = homeGroupSeed.expenses.reduce<Record<string, number>>(
@@ -68,5 +72,13 @@ describe("home group seed data", () => {
       payerCounts["member-home-lucy"]
     );
     expect(categoryTotals["住宿"]).toBeGreaterThan(categoryTotals["超市"] * 5);
+  });
+
+  it("provides English demo names and expense titles without changing IDs or balances", () => {
+    const { users, groups } = localizedSeedData("en");
+    expect(users.find((user) => user.id === "user-xiaoli")?.displayName).toBe("Alex");
+    expect(groups.map((group) => group.name)).toEqual(["Apartment", "Hawaii Trip"]);
+    expect(groups[0].expenses.find((expense) => expense.id === "home-rent-01")?.description).toContain("rent");
+    expect(groups[1].expenses.find((expense) => expense.id === "hawaii-expense-01")?.description).toBe("Flight balance");
   });
 });

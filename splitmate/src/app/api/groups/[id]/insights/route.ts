@@ -1,7 +1,9 @@
 import { getGroupStats } from "@/server/group-stats";
 import { getOrGenerateInsights } from "@/server/insights";
+import { requestLocale } from "@/i18n/server";
 
 async function respond(
+  request: Request,
   params: Promise<{ id: string }>,
   force: boolean
 ) {
@@ -10,20 +12,20 @@ async function respond(
   if (!stats) return Response.json({ insights: [] }, { status: 404 });
   if (stats.expenseCount === 0) return Response.json({ insights: [] });
 
-  const result = await getOrGenerateInsights("group", id, stats, { force });
+  const result = await getOrGenerateInsights("group", id, stats, { force, locale: requestLocale(request) });
   return Response.json({ insights: result.insights });
 }
 
 export function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  return respond(params, false);
+  return respond(request, params, false);
 }
 
 export function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  return respond(params, true);
+  return respond(request, params, true);
 }

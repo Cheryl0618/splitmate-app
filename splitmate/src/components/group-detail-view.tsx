@@ -1,27 +1,26 @@
 "use client";
 
 import Link from "next/link";
+import { ChevronLeft, Plus, Settings, X } from "lucide-react";
 import { useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
 import { ConsumptionSummaryPanel } from "@/components/consumption-summary-panel";
 import { SummaryImageExport } from "@/components/summary-image-export";
+import { SyncReminderBanner } from "@/components/sync-reminder-banner";
+import { Chip } from "@/components/ui/chip";
+import { CategoryIcon } from "@/components/ui/category-icon";
+import { IconLink } from "@/components/ui/icon-action";
 import { useCurrentUser } from "@/lib/current-user";
-import { formatCents } from "@/lib/format";
+import { avatarColorClass } from "@/lib/avatar-colors";
+import { formatCents, formatDate } from "@/lib/format";
 import { expenseCategories, type ExpenseCategory } from "@/lib/expense-input";
 import { filterExpenses, totalExpenseCents } from "@/lib/expense-filter";
 import type { Currency } from "@/lib/currency";
 import type { GroupDetailData, GroupExpenseSummary } from "@/server/group-details";
-
-function formatDate(date: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(date));
-}
+import { useT } from "@/i18n/context";
+import { categoryKey } from "@/i18n/category";
 
 function groupExpensesByDate(expenses: GroupExpenseSummary[]) {
   const groups = new Map<string, GroupExpenseSummary[]>();
@@ -41,17 +40,19 @@ function BalanceAmount({
   amountCents: number;
   currency: Currency;
 }) {
+  const { locale, t } = useT();
   if (amountCents > 0) {
-    return <span className="font-bold text-emerald-600">+{formatCents(amountCents, currency)}</span>;
+    return <span className="amount text-lg font-medium text-ink">+{formatCents(amountCents, currency, locale)}</span>;
   }
   if (amountCents < 0) {
-    return <span className="font-bold text-rose-600">{formatCents(amountCents, currency)}</span>;
+    return <span className="amount text-lg font-medium text-accent">{formatCents(amountCents, currency, locale)}</span>;
   }
-  return <span className="font-semibold text-slate-400">已结清</span>;
+  return <span className="font-semibold text-ink-soft">{t("common.settled")}</span>;
 }
 
 export function GroupDetailView({ group }: { group: GroupDetailData }) {
   const { currentUserId } = useCurrentUser();
+  const { locale, t } = useT();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -82,11 +83,11 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
       group.expenses,
       expenseQuery,
       selectedCategories,
-      group.currency
+      group.currency,
+      locale
     );
-  }, [expenseQuery, group.currency, group.expenses, selectedCategories]);
+  }, [expenseQuery, group.currency, group.expenses, locale, selectedCategories]);
   const filteredTotalCents = totalExpenseCents(filteredExpenses);
-  const hasFilters = Boolean(expenseQuery.trim() || selectedCategories.length);
 
   function replaceFilters(query: string, categories: ExpenseCategory[]) {
     const next = new URLSearchParams(searchParams.toString());
@@ -112,34 +113,39 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
     replaceFilters("", []);
   }
 
+  function clearCategories() {
+    replaceFilters(expenseQuery, []);
+  }
+
   return (
-    <main className="min-h-screen bg-[#f6f8f7] text-slate-900">
+    <main className="min-h-screen bg-bg text-ink">
       <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 lg:px-12">
         <header>
-          <Link
+          <IconLink
             href="/"
-            className="inline-flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-slate-500 hover:text-teal-700"
-          >
-            <span aria-hidden="true">←</span>
-            所有群组
-          </Link>
+            icon={ChevronLeft}
+            label={t("group.backAll")}
+            className="bg-surface"
+          />
         </header>
 
         <div className="pb-8 pt-12 sm:pt-16">
-          <p className="mb-2 text-sm font-semibold text-teal-700">共享账本</p>
+          <p className="mb-2 text-sm font-semibold text-ink">{t("home.sharedLedger")}</p>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{group.name}</h1>
             <div className="flex flex-wrap items-center gap-2">
               <SummaryImageExport data={group.exportSummary} />
-              <Link
+              <IconLink
                 href={`/groups/${group.id}/settings#members`}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-600 hover:border-teal-300 hover:text-teal-700"
-              >
-                添加成员 / 设置
-              </Link>
+                icon={Settings}
+                label={t("group.openSettings")}
+                className="bg-surface"
+              />
             </div>
           </div>
         </div>
+
+        <SyncReminderBanner />
 
         <div className="mb-8">
           <ConsumptionSummaryPanel endpoint={`/api/groups/${group.id}/insights`} currency={group.currency} />
@@ -148,10 +154,12 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
         {balanceTotalCents !== 0 ? (
           <div
             role="alert"
-            className="mb-6 rounded-2xl border border-rose-300 bg-rose-50 px-5 py-4 font-semibold text-rose-800"
+            className="mb-6 rounded-[14px] bg-inset px-5 py-4 font-semibold text-ink"
           >
-            余额合计异常：{formatCents(balanceTotalCents, group.currency)}，所有成员净额应合计为{" "}
-            {formatCents(0, group.currency)}。
+            {t("group.balanceError", {
+              actual: formatCents(balanceTotalCents, group.currency, locale),
+              expected: formatCents(0, group.currency, locale),
+            })}
           </div>
         ) : null}
 
@@ -159,47 +167,46 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
           <div className="mb-4 flex items-end justify-between">
             <div>
               <h2 id="balances-heading" className="text-xl font-bold">
-                成员余额
+                {t("group.memberBalances")}
               </h2>
-              <p className="mt-1 text-sm text-slate-500">正数代表应收，负数代表应付</p>
+              <p className="mt-1 text-sm text-ink-soft">{t("group.balanceHint")}</p>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-400">{group.members.length} 人</span>
+              <span className="text-sm text-ink-soft">{t("group.peopleCount", { count: group.members.length })}</span>
               <Link
                 href={`/groups/${group.id}/settle`}
-                className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold text-teal-700 hover:bg-teal-100"
+                className="rounded-full bg-surface px-4 py-2 text-sm font-bold text-ink hover:opacity-70"
               >
-                去结算
+                {t("settle.action")}
               </Link>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+          <div className="overflow-hidden rounded-[14px] bg-surface">
             {orderedBalances.map((balance) => {
               const isCurrent = balance.userId === currentUserId;
+              const member = group.members.find(
+                (candidate) => candidate.id === balance.memberId
+              );
               return (
                 <Link
                   key={balance.memberId}
                   href={`/groups/${group.id}/members/${balance.memberId}`}
-                  className={`flex items-center justify-between border-b border-slate-100 px-5 py-4 transition-colors last:border-b-0 ${
-                    isCurrent ? "bg-teal-50/80" : "hover:bg-slate-50"
+                  className={`flex items-center justify-between border-b border-line px-5 py-4 transition-colors last:border-b-0 ${
+                    isCurrent ? "bg-inset" : "hover:bg-inset"
                   }`}
-                  aria-label={isCurrent ? "查看我的成员档案" : `查看与${balance.displayName}的关系画像`}
+                  aria-label={isCurrent ? t("group.viewMyProfile") : t("group.viewRelationship", { name: balance.displayName })}
                 >
                   <div className="flex items-center gap-3">
                     <span
-                      className={`grid h-10 w-10 place-items-center rounded-full text-sm font-bold ${
-                        isCurrent
-                          ? "bg-teal-600 text-white"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
+                      className={`grid h-10 w-10 place-items-center rounded-full text-sm font-bold ${avatarColorClass(member?.avatarColor)}`}
                     >
-                      {(isCurrent ? "你" : balance.displayName).slice(0, 1).toUpperCase()}
+                      {(isCurrent ? t("common.you") : balance.displayName).slice(0, 1).toUpperCase()}
                     </span>
                     <div>
-                      <p className="font-semibold">{isCurrent ? "你" : balance.displayName}</p>
+                      <p className="font-semibold">{isCurrent ? t("common.you") : balance.displayName}</p>
                       {isCurrent ? (
-                        <p className="text-xs font-medium text-teal-700">我的余额</p>
+                        <p className="text-xs font-medium text-ink">{t("group.myBalance")}</p>
                       ) : null}
                     </div>
                   </div>
@@ -215,22 +222,23 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
           <div className="mb-5 flex items-end justify-between gap-4">
             <div>
               <h2 id="expenses-heading" className="text-xl font-bold">
-                账单列表
+                {t("expense.list")}
               </h2>
-              <p className="mt-1 text-sm text-slate-500">按日期查看群组内的所有支出</p>
+              <p className="mt-1 text-sm text-ink-soft">{t("expense.listDescription")}</p>
             </div>
             <Link
               href={`/groups/${group.id}/expenses/new`}
-              className="shrink-0 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-700"
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-accent px-4 py-2.5 text-sm font-bold text-surface hover:opacity-85"
             >
-              记一笔
+              <Plus aria-hidden="true" size={18} strokeWidth={2} />
+              {t("expense.add")}
             </Link>
           </div>
 
           {group.expenses.length > 0 ? (
-            <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:p-5">
-              <label className="block text-sm font-bold text-slate-700" htmlFor="expense-search">
-                搜索账单
+            <div className="mb-6 rounded-[14px] bg-surface p-4 sm:p-5">
+              <label className="block text-sm font-bold text-ink" htmlFor="expense-search">
+                {t("expense.search")}
               </label>
               <input
                 id="expense-search"
@@ -239,39 +247,35 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
                 onChange={(event) =>
                   replaceFilters(event.target.value, selectedCategories)
                 }
-                placeholder="按标题或金额搜索"
-                className="mt-2 w-full min-w-0 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                placeholder={t("expense.searchPlaceholder")}
+                className="mt-2 w-full min-w-0 rounded-[14px] border border-line px-4 py-3 text-sm outline-none focus:border-line focus:ring-2 focus:ring-ink"
               />
 
               <fieldset className="mt-5">
-                <legend className="text-sm font-bold text-slate-700">分类筛选</legend>
+                <legend className="text-sm font-bold text-ink">{t("expense.categoryFilter")}</legend>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {expenseCategories.map((category) => {
                     const selected = selectedCategories.includes(category);
                     return (
-                      <button
+                      <Chip
                         key={category}
-                        type="button"
-                        aria-pressed={selected}
+                        pressed={selected}
                         onClick={() => toggleCategory(category)}
-                        className={`rounded-full border px-3 py-1.5 text-sm font-bold transition-colors ${
-                          selected
-                            ? "border-teal-600 bg-teal-600 text-white"
-                            : "border-slate-200 bg-white text-slate-500 hover:border-teal-300 hover:text-teal-700"
-                        }`}
                       >
-                        {category}{selected ? " ×" : ""}
-                      </button>
+                        <CategoryIcon category={category} />
+                        {t(categoryKey(category))}
+                      </Chip>
                     );
                   })}
-                  {hasFilters ? (
-                    <button
-                      type="button"
-                      onClick={clearFilters}
-                      className="rounded-full px-3 py-1.5 text-sm font-bold text-rose-600 hover:bg-rose-50"
+                  {selectedCategories.length > 0 ? (
+                    <Chip
+                      variant="clear"
+                      onClick={clearCategories}
+                      aria-label={t("expense.clearCategoryFilter")}
                     >
-                      清除筛选
-                    </button>
+                      <X aria-hidden="true" size={14} strokeWidth={2} />
+                      {t("common.clear")}
+                    </Chip>
                   ) : null}
                 </div>
               </fieldset>
@@ -280,72 +284,63 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
 
           {group.expenses.length > 0 ? (
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <p className="font-bold text-slate-700" aria-live="polite">
-                {filteredExpenses.length} 笔 · 合计{" "}
-                {formatCents(filteredTotalCents, group.currency)}
+              <p className="amount text-lg font-medium text-ink" aria-live="polite">
+                {t("expense.filterSummary", {
+                  count: filteredExpenses.length,
+                  amount: formatCents(filteredTotalCents, group.currency, locale),
+                })}
               </p>
-              {selectedCategories.length > 0 ? (
-                <div className="flex flex-wrap gap-2" aria-label="已选分类">
-                  {selectedCategories.map((category) => (
-                    <button
-                      key={category}
-                      type="button"
-                      onClick={() => toggleCategory(category)}
-                      className="rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-700 hover:bg-teal-100"
-                      aria-label={`取消分类 ${category}`}
-                    >
-                      {category} ×
-                    </button>
-                  ))}
-                </div>
-              ) : null}
             </div>
           ) : null}
 
           {group.expenses.length === 0 ? (
             <EmptyState
-              title="这个群组还没有账单"
-              description="先记下第一笔共同支出，成员余额和结算方案就会自动出现在这里。"
+              title={t("expense.emptyTitle")}
+              description={t("expense.emptyDescription")}
               actionHref={`/groups/${group.id}/expenses/new`}
-              actionLabel="＋ 记一笔"
+              actionLabel={t("expense.add")}
               prominentAction
+              showPlusIcon
             />
           ) : (
             <div className="space-y-8">
               {currentMember && !hasCurrentParticipation ? (
                 <EmptyState
-                  title="你还没有参与任何账单"
-                  description="群组里已经有账单，但目前都没有分摊给你。记一笔并选择自己参与，之后这里就会显示你的支出。"
+                  title={t("expense.noParticipationTitle")}
+                  description={t("expense.noParticipationDescription")}
                   actionHref={`/groups/${group.id}/expenses/new`}
-                  actionLabel="记下我的第一笔"
+                  actionLabel={t("expense.addFirst")}
+                  showPlusIcon
                 />
               ) : null}
               {filteredExpenses.length === 0 ? (
-                <div className="rounded-3xl border border-slate-200 bg-white px-5 py-10 text-center">
-                  <p className="font-bold text-slate-700">没有符合条件的账单</p>
-                  <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500">
-                    当前条件：
-                    {expenseQuery.trim() ? `关键词“${expenseQuery.trim()}”` : "未设置关键词"}
-                    {selectedCategories.length
-                      ? `，分类为${selectedCategories.join("、")}`
-                      : "，未限制分类"}
-                    。清除条件后可以查看全部账单。
+                <div className="rounded-[14px] bg-surface px-5 py-10 text-center">
+                  <p className="font-bold text-ink">{t("expense.noResults")}</p>
+                  <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-ink-soft">
+                    {t("expense.currentFilters", {
+                      query: expenseQuery.trim()
+                        ? t("expense.queryValue", { query: expenseQuery.trim() })
+                        : t("expense.noQuery"),
+                      categories: selectedCategories.length
+                        ? t("expense.categoryValue", { categories: selectedCategories.map((category) => t(categoryKey(category))).join(locale === "zh" ? "、" : ", ") })
+                        : t("expense.noCategory"),
+                    })}
                   </p>
                   <button
                     type="button"
                     onClick={clearFilters}
-                    className="mt-3 text-sm font-bold text-teal-700 hover:text-teal-800"
+                    className="mt-3 rounded-full bg-surface px-4 py-2 text-sm font-bold text-ink hover:opacity-70"
                   >
-                    清除筛选
+                    {t("expense.clearFilters")}
                   </button>
                 </div>
               ) : null}
               {groupExpensesByDate(filteredExpenses).map(([date, expenses]) => (
               <div key={date}>
-                <h3 className="mb-3 text-sm font-bold text-slate-500">
-                  {formatDate(`${date}T00:00:00.000Z`)}
+                <h3 className="mb-3 text-sm font-bold text-ink-soft">
+                  {formatDate(`${date}T00:00:00.000Z`, locale, { year: "numeric", month: locale === "zh" ? "long" : "short", day: "numeric", timeZone: "UTC" })}
                 </h3>
-                <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+                <div className="overflow-hidden rounded-[14px] bg-surface">
                   {expenses.map((expense) => {
                     const myShare = expense.shares.find(
                       (share) => share.memberId === currentMember?.id
@@ -356,10 +351,10 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
                       <Link
                         key={expense.id}
                         href={`/expenses/${expense.id}`}
-                        className={`grid min-w-0 gap-3 border-b border-slate-100 px-4 py-4 transition-colors last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-5 ${
+                        className={`grid min-w-0 gap-3 border-b border-line px-4 py-4 transition-colors last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-5 ${
                           isParticipating
-                            ? "hover:bg-slate-50"
-                            : "bg-slate-50/70 text-slate-400 hover:bg-slate-100"
+                            ? "hover:bg-inset"
+                            : "bg-inset text-ink-soft hover:bg-inset"
                         }`}
                       >
                         <div className="min-w-0">
@@ -372,20 +367,25 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
                               {expense.description}
                             </p>
                             {!isParticipating ? (
-                              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-500">
-                                未参与
-                              </span>
+                              <Chip as="span" variant="clear">{t("expense.notInvolved")}</Chip>
                             ) : null}
                           </div>
-                          <p className="mt-1 text-sm">
-                            {expense.paidByMemberId === currentMember?.id ? "你" : expense.paidByName}付款 · {expense.category} · 总额 {formatCents(expense.amountCents, group.currency)}
-                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                            <span>
+                              {t("expense.paidBy", { name: expense.paidByMemberId === currentMember?.id ? t("common.you") : expense.paidByName })}
+                            </span>
+                            <Chip as="span">
+                              <CategoryIcon category={expense.category} />
+                              {t(categoryKey(expense.category))}
+                            </Chip>
+                            <span>{t("expense.totalWithAmount", { amount: formatCents(expense.amountCents, group.currency, locale) })}</span>
+                          </div>
                         </div>
                         <div className="min-w-0 sm:text-right">
-                          <p className="text-xs text-slate-400">我这笔出了多少</p>
-                          <p className="mt-1 font-bold">
+                          <p className="text-xs text-ink-soft">{t("expense.myShare")}</p>
+                          <p className="amount mt-1 text-lg font-medium">
                             {isParticipating && myShare
-                              ? formatCents(myShare.amountCents, group.currency)
+                              ? formatCents(myShare.amountCents, group.currency, locale)
                               : "—"}
                           </p>
                         </div>
@@ -401,11 +401,11 @@ export function GroupDetailView({ group }: { group: GroupDetailData }) {
       </div>
       <Link
         href={`/groups/${group.id}/expenses/new`}
-        className="fixed bottom-6 right-4 z-40 inline-flex min-h-12 items-center gap-2 rounded-full bg-teal-600 px-5 py-3 font-extrabold text-white shadow-xl shadow-teal-950/20 transition-transform hover:-translate-y-0.5 hover:bg-teal-700 sm:bottom-8 sm:right-8"
-        aria-label={`在${group.name}记一笔账单`}
+        className="fixed bottom-6 right-4 z-40 inline-flex min-h-12 items-center gap-2 rounded-full bg-accent px-5 py-3 font-extrabold text-surface transition-transform hover:-translate-y-0.5 hover:opacity-85 sm:bottom-8 sm:right-8"
+        aria-label={t("expense.addInGroup", { name: group.name })}
       >
-        <span aria-hidden="true" className="text-xl leading-none">＋</span>
-        记一笔
+        <Plus aria-hidden="true" size={18} strokeWidth={2} />
+        {t("expense.add")}
       </Link>
     </main>
   );

@@ -1,28 +1,35 @@
 import type { Currency } from "./currency";
+import type { Locale } from "@/i18n/context";
 
-const currencyDisplay: Record<
-  Currency,
-  { symbol: string; fractionDigits: number }
-> = {
-  CNY: { symbol: "¥", fractionDigits: 2 },
-  USD: { symbol: "$", fractionDigits: 2 },
-  EUR: { symbol: "€", fractionDigits: 2 },
-  GBP: { symbol: "£", fractionDigits: 2 },
-  JPY: { symbol: "¥", fractionDigits: 0 },
-  CAD: { symbol: "CA$", fractionDigits: 2 },
-  AUD: { symbol: "A$", fractionDigits: 2 },
-  HKD: { symbol: "HK$", fractionDigits: 2 },
-  SGD: { symbol: "S$", fractionDigits: 2 },
-  KRW: { symbol: "₩", fractionDigits: 0 },
-  TWD: { symbol: "NT$", fractionDigits: 2 },
-};
+export function intlLocale(locale: Locale) {
+  return locale === "zh" ? "zh-CN" : "en-US";
+}
 
-export function formatCents(amountCents: number, currency: Currency = "CNY") {
-  const sign = amountCents < 0 ? "-" : "";
-  const display = currencyDisplay[currency];
-  const amount = (Math.abs(amountCents) / 100).toLocaleString("en-US", {
-    minimumFractionDigits: display.fractionDigits,
-    maximumFractionDigits: display.fractionDigits,
-  });
-  return `${sign}${display.symbol}${amount}`;
+export function formatCents(
+  amountCents: number,
+  currency: Currency,
+  locale?: Locale
+) {
+  const sign = amountCents < 0 ? "−" : "";
+  const amount = new Intl.NumberFormat(intlLocale(locale ?? "en"), {
+    style: "currency",
+    currency,
+    currencyDisplay: "symbol",
+  }).format(Math.abs(amountCents) / 100);
+  const legacyCompatibleAmount = locale === undefined && currency === "CNY"
+    ? amount.replace("CN¥", "¥")
+    : amount;
+  return `${sign}${legacyCompatibleAmount}`;
+}
+
+export function formatDate(
+  value: Date | string | number,
+  locale: Locale,
+  options: Intl.DateTimeFormatOptions = {
+    year: "numeric",
+    month: locale === "zh" ? "long" : "short",
+    day: "numeric",
+  }
+) {
+  return new Intl.DateTimeFormat(intlLocale(locale), options).format(new Date(value));
 }

@@ -1,4 +1,5 @@
 import { GroupMutationError, updateGroup } from "@/server/group-mutations";
+import { localizedError, serverT } from "@/i18n/server";
 
 export async function PATCH(
   request: Request,
@@ -15,8 +16,8 @@ export async function PATCH(
     return Response.json(result);
   } catch (error) {
     if (error instanceof GroupMutationError) {
-      return Response.json({ error: error.message }, { status: error.status });
+      return Response.json({ error: localizedError(request, error.message, "group.saveError") }, { status: error.status });
     }
-    return Response.json({ error: "保存群组设置失败，请重试" }, { status: 500 });
+    return Response.json({ error: serverT(request, "group.saveError") }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getRelationshipPageData } from "@/server/relationships";
+import { serverT } from "@/i18n/server";
 
 export async function GET(
   request: Request,
@@ -10,7 +11,7 @@ export async function GET(
   const currentUserId = request.headers.get("x-demo-user-id")?.trim() ?? "";
   const data = getRelationshipPageData(id, memberId, currentUserId);
   if (!data) {
-    return NextResponse.json({ error: "群组或成员不存在" }, { status: 404 });
+    return NextResponse.json({ error: serverT(request, "api.relationshipNotFound") }, { status: 404 });
   }
   return NextResponse.json(data);
 }

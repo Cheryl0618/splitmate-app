@@ -62,7 +62,7 @@ export function createSettlement(
   value: unknown
 ) {
   if (!currentUserId) {
-    throw new SettlementMutationError("缺少当前用户", 401);
+    throw new SettlementMutationError("请先完成首次设置", 401);
   }
   const input = parseInput(value);
   const pageData = getSettlementPageData(groupId);
@@ -76,7 +76,7 @@ export function createSettlement(
       )
       .get(groupId, currentUserId);
     if (!membership) {
-      throw new SettlementMutationError("当前用户不属于这个群组", 403);
+      throw new SettlementMutationError("你不属于这个群组", 403);
     }
   } finally {
     database.close();
@@ -126,7 +126,7 @@ export function deleteSettlement(
   currentUserId: string
 ) {
   if (!currentUserId) {
-    throw new SettlementMutationError("缺少当前用户", 401);
+    throw new SettlementMutationError("请先完成首次设置", 401);
   }
   const database = openWritableDatabase();
   try {
@@ -136,7 +136,7 @@ export function deleteSettlement(
       )
       .get(groupId, currentUserId);
     if (!membership) {
-      throw new SettlementMutationError("当前用户不属于这个群组", 403);
+      throw new SettlementMutationError("你不属于这个群组", 403);
     }
     const settlement = database
       .prepare(`SELECT id FROM "Settlement" WHERE id = ? AND groupId = ?`)

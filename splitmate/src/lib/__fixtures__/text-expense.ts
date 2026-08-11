@@ -14,3 +14,9 @@ export const textExpenseFixture = {
   unresolvedNames: [],
   confidence: "high",
 } as const;
+
+export const textExpenseFixtureEn = {
+  ...textExpenseFixture,
+  merchantName: "Dinner",
+  note: "Dinner last night; Wang did not drink, Lucy had lobster, and Tom only had coffee",
+} as const;

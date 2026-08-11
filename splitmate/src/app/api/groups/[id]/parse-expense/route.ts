@@ -1,5 +1,6 @@
 import { parseExpense, type ParseExpenseInput } from "@/lib/parse-expense";
 import { getExpenseFormGroup } from "@/server/expenses";
+import { requestLocale, serverT } from "@/i18n/server";
 
 function isParseInput(value: unknown): value is ParseExpenseInput {
   if (!value || typeof value !== "object") return false;
@@ -27,11 +28,11 @@ export async function POST(
 ) {
   const { id } = await params;
   const group = getExpenseFormGroup(id);
-  if (!group) return Response.json({ error: "群组不存在" }, { status: 404 });
+  if (!group) return Response.json({ error: serverT(request, "api.groupNotFound") }, { status: 404 });
 
   const input: unknown = await request.json().catch(() => null);
   if (!isParseInput(input)) {
-    return Response.json({ error: "解析内容不能为空" }, { status: 400 });
+    return Response.json({ error: serverT(request, "api.parseEmpty") }, { status: 400 });
   }
 
   const currentUserId = request.headers.get("x-demo-user-id")?.trim() ?? "";
@@ -41,7 +42,8 @@ export async function POST(
       id: memberId,
       displayName,
       isCurrentUser: userId === currentUserId,
-    }))
+    })),
+    requestLocale(request)
   );
   return Response.json(parsed);
 }

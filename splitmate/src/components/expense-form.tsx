@@ -2,9 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { Chip } from "@/components/ui/chip";
 import { useCurrentUser } from "@/lib/current-user";
 import {
   expenseCategories,
@@ -12,7 +14,7 @@ import {
   type ExpenseInput,
 } from "@/lib/expense-input";
 import { formatCents } from "@/lib/format";
-import { currencySymbols } from "@/lib/currency";
+import type { Currency } from "@/lib/currency";
 import {
   MAX_AI_INPUT_LENGTH,
   MAX_AMOUNT_CENTS,
@@ -29,6 +31,8 @@ import {
   type SplitParticipant,
 } from "@/lib/split";
 import type { ExpenseFormGroupData } from "@/server/expenses";
+import { useT } from "@/i18n/context";
+import { categoryKey } from "@/i18n/category";
 
 export interface ExpenseFormInitialValue {
   id: string;
@@ -115,14 +119,18 @@ function centsInputValue(amountCents: number | undefined) {
   return ((amountCents ?? 0) / 100).toFixed(2);
 }
 
+function currencyPrefix(currency: Currency, locale: "zh" | "en") {
+  return formatCents(0, currency, locale).replace(/[\d.,\s]/g, "");
+}
+
 function readImage(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () =>
       typeof reader.result === "string"
         ? resolve(reader.result)
-        : reject(new Error("无法读取图片"));
-    reader.onerror = () => reject(new Error("无法读取图片"));
+        : reject(new Error("Could not read image"));
+    reader.onerror = () => reject(new Error("Could not read image"));
     reader.readAsDataURL(file);
   });
 }
@@ -135,6 +143,7 @@ export function ExpenseForm({
   initialValue?: ExpenseFormInitialValue;
 }) {
   const router = useRouter();
+  const { locale, t } = useT();
   const { currentUserId } = useCurrentUser();
   const currentMember = group.members.find((member) => member.userId === currentUserId);
   const initialMemberIds = initialValue
@@ -151,7 +160,7 @@ export function ExpenseForm({
     initialValue?.paidBy ?? currentMember?.id ?? group.members[0]?.id ?? ""
   );
   const [category, setCategory] = useState<ExpenseCategory>(
-    initialValue?.category ?? "其他"
+    initialValue?.category ?? expenseCategories[7]
   );
   const [method, setMethod] = useState<SplitMethod>(initialValue?.method ?? "equal");
   const [selectedMemberIds, setSelectedMemberIds] = useState(initialMemberIds);
@@ -253,26 +262,26 @@ export function ExpenseForm({
   const amountDifferenceCents = amountCents - assignedAmountCents;
   const allocationError = itemRows
     ? itemizedResult === null
-      ? "请为每件商品至少选择一名参与人"
+      ? t("expense.itemParticipantError")
       : ""
     : method === "percentage" && Math.abs(percentageDifference) > 1e-9
       ? percentageDifference > 0
-        ? `还差 ${formatPercentage(percentageDifference)}%`
-        : `超出 ${formatPercentage(Math.abs(percentageDifference))}%`
+        ? t("expense.shortBy", { amount: `${formatPercentage(percentageDifference)}%` })
+        : t("expense.overBy", { amount: `${formatPercentage(Math.abs(percentageDifference))}%` })
       : method === "amount" && amountDifferenceCents !== 0
         ? amountDifferenceCents > 0
-          ? `还差 ${formatCents(amountDifferenceCents, group.currency)}`
-          : `超出 ${formatCents(Math.abs(amountDifferenceCents), group.currency)}`
+          ? t("expense.shortBy", { amount: formatCents(amountDifferenceCents, group.currency, locale) })
+          : t("expense.overBy", { amount: formatCents(Math.abs(amountDifferenceCents), group.currency, locale) })
         : "";
   const amountLimitError =
-    amountCents > MAX_AMOUNT_CENTS ? "单笔账单金额不能超过一百万元" : "";
+    amountCents > MAX_AMOUNT_CENTS ? t("expense.amountLimit") : "";
   const descriptionLimitError =
     Array.from(description).length > MAX_DESCRIPTION_LENGTH
-      ? `账单标题不能超过 ${MAX_DESCRIPTION_LENGTH} 个字符`
+      ? t("expense.titleLimit", { count: MAX_DESCRIPTION_LENGTH })
       : "";
   const aiInputLimitError =
     Array.from(textInput).length > MAX_AI_INPUT_LENGTH
-      ? `AI 输入不能超过 ${MAX_AI_INPUT_LENGTH} 个字符`
+      ? t("expense.aiLimit", { count: MAX_AI_INPUT_LENGTH })
       : "";
   const canSubmit =
     amountCents > 0 &&
@@ -359,19 +368,19 @@ export function ExpenseForm({
       result.validationError
         ? result.validationError
         : result.needsClarification
-          ? "还需要确认一项信息，回答后会继续补全结果。"
+          ? t("expense.clarificationNeeded")
           : result.clarificationExhausted
-            ? "连续追问 3 轮后信息仍不完整，已降级到手动录入。"
+            ? t("expense.clarificationExhausted")
             : result.confidence === "low"
-        ? "识别失败或结果不完整，已降级到手动录入。"
-        : "解析完成，请核对后再创建账单。"
+        ? t("expense.parseFallback")
+        : t("expense.parseComplete")
     );
     setClarificationAnswer("");
   }
 
   async function requestParse(input: ParseExpenseInput) {
     setIsParsing(true);
-    setParseNotice("正在识别并匹配群组成员…");
+    setParseNotice(t("expense.parsing"));
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 10_000);
     try {
@@ -380,17 +389,18 @@ export function ExpenseForm({
         headers: {
           "content-type": "application/json",
           "x-demo-user-id": currentUserId,
+          "x-ui-locale": locale,
         },
         body: JSON.stringify(input),
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error("解析失败");
+      if (!response.ok) throw new Error(t("expense.parseError"));
       const result = (await response.json()) as ParsedExpense;
       applyParsedExpense(result, input);
     } catch {
       applyParsedExpense(
         {
-          category: "其他",
+          category: expenseCategories[7],
           totalCents: 0,
           participantMemberIds: [],
           note: input.type === "text" ? input.data : undefined,
@@ -410,14 +420,14 @@ export function ExpenseForm({
   async function handleImageFile(file: File | undefined) {
     if (!file) return;
     setIsParsing(true);
-    setParseNotice("正在读取收据图片…");
+    setParseNotice(t("expense.readingReceipt"));
     try {
       const data = await readImage(file);
       setPhotoUrls([data]);
       await requestParse({ type: "image", data });
     } catch {
       setParseResult({
-        category: "其他",
+        category: expenseCategories[7],
         totalCents: 0,
         participantMemberIds: [],
         unresolvedNames: [],
@@ -425,7 +435,7 @@ export function ExpenseForm({
         needsClarification: false,
         clarificationExhausted: true,
       });
-      setParseNotice("图片读取失败，已降级到手动录入。");
+      setParseNotice(t("expense.imageFallback"));
       setIsParsing(false);
     }
   }
@@ -471,53 +481,53 @@ export function ExpenseForm({
         headers: {
           "content-type": "application/json",
           "x-demo-user-id": currentUserId,
+          "x-ui-locale": locale,
         },
         body: JSON.stringify(payload),
       });
       const result = (await response.json()) as { error?: string; expenseId?: string };
-      if (!response.ok) throw new Error(result.error || "保存账单失败");
+      if (!response.ok) throw new Error(result.error || t("expense.saveError"));
 
       router.push(initialValue ? `/expenses/${initialValue.id}` : `/groups/${group.id}`);
       router.refresh();
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "保存账单失败");
+      setSubmitError(error instanceof Error ? error.message : t("expense.saveError"));
       setIsSubmitting(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f8f7] text-slate-900">
+    <main className="min-h-screen bg-bg text-ink">
       <div className="mx-auto max-w-3xl px-4 py-6 sm:px-8 lg:px-12">
         <Link
           href={initialValue ? `/expenses/${initialValue.id}` : `/groups/${group.id}`}
-          className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-teal-700"
+          className="text-sm font-semibold text-ink hover:opacity-70"
         >
-          <span aria-hidden="true">←</span>
-          取消并返回
+          {t("group.cancelBack")}
         </Link>
 
         <div className="pb-7 pt-10">
-          <p className="text-sm font-semibold text-teal-700">{group.name}</p>
+          <p className="text-sm font-semibold text-ink">{group.name}</p>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight">
-            {initialValue ? "编辑账单" : "新建账单"}
+            {t(initialValue ? "nav.expenseEdit" : "nav.expenseNew")}
           </h1>
         </div>
 
         {!initialValue ? (
-          <section className="mb-6 rounded-3xl border border-teal-200 bg-white p-5 shadow-[0_12px_35px_rgba(15,118,110,0.08)] sm:p-6">
+          <section className="mb-6 rounded-[14px] bg-surface p-5 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-bold text-teal-700">AI 快速录入</p>
-                <p className="mt-1 text-sm text-slate-500">
-                  拍一张收据，或用一句话描述这笔支出。
+                <p className="text-sm font-bold text-ink">{t("expense.aiQuickEntry")}</p>
+                <p className="mt-1 text-sm text-ink-soft">
+                  {t("expense.aiQuickDescription")}
                 </p>
               </div>
               <label
-                className={`cursor-pointer rounded-2xl bg-teal-600 px-4 py-2.5 text-sm font-bold text-white ${
-                  isParsing ? "pointer-events-none opacity-50" : "hover:bg-teal-700"
+                className={`cursor-pointer rounded-full bg-accent px-4 py-2.5 text-sm font-bold text-surface ${
+                  isParsing ? "pointer-events-none opacity-50" : "hover:opacity-85"
                 }`}
               >
-                拍照 / 选收据
+                {t("expense.photoReceipt")}
                 <input
                   type="file"
                   accept="image/*"
@@ -533,9 +543,9 @@ export function ExpenseForm({
               <textarea
                 value={textInput}
                 onChange={(event) => setTextInput(event.target.value)}
-                placeholder="例如：今晚聚餐我付了238，小王没喝酒，Lucy吃了龙虾…"
+                placeholder={t("expense.aiPlaceholder")}
                 rows={2}
-                className="min-h-20 flex-1 resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                className="min-h-20 flex-1 resize-none rounded-[14px] border border-line px-4 py-3 text-sm outline-none focus:border-line focus:ring-2 focus:ring-ink"
               />
               <button
                 type="button"
@@ -543,31 +553,31 @@ export function ExpenseForm({
                 onClick={() =>
                   void requestParse({ type: "text", data: textInput.trim() })
                 }
-                className="rounded-2xl border border-teal-200 px-5 py-3 text-sm font-bold text-teal-700 hover:bg-teal-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300 sm:self-stretch"
+                className="rounded-full bg-surface px-5 py-3 text-sm font-bold text-ink hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-50 sm:self-stretch"
               >
-                解析这句话
+                {t("expense.parseText")}
               </button>
             </div>
 
             {aiInputLimitError ? (
-              <p className="mt-2 text-sm font-semibold text-rose-600" role="alert">
+              <p className="mt-2 text-sm font-semibold text-ink" role="alert">
                 {aiInputLimitError}
               </p>
             ) : null}
 
             {parseNotice ? (
               <div
-                className={`mt-4 rounded-2xl px-4 py-3 text-sm font-semibold ${
+                className={`mt-4 rounded-[14px] px-4 py-3 text-sm font-semibold ${
                   isParsing
-                    ? "bg-teal-50 text-teal-800"
+                    ? "bg-inset text-ink"
                     : parseResult?.confidence === "low"
-                      ? "bg-amber-50 text-amber-800"
-                      : "bg-emerald-50 text-emerald-800"
+                      ? "bg-inset text-ink"
+                      : "bg-inset text-ink"
                 }`}
                 role="status"
               >
                 {isParsing ? (
-                  <span className="mr-2 inline-block h-3 w-3 animate-pulse rounded-full bg-teal-500" />
+                  <span className="mr-2 inline-block h-3 w-3 animate-pulse rounded-full bg-accent" />
                 ) : null}
                 {parseNotice}
               </div>
@@ -576,19 +586,19 @@ export function ExpenseForm({
             {parseResult?.needsClarification &&
             parseResult.clarificationQuestion &&
             parseResult.clarificationContext ? (
-              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                <p className="font-bold text-amber-950">
+              <div className="mt-4 rounded-[14px] bg-inset p-4">
+                <p className="font-bold text-ink">
                   {parseResult.clarificationQuestion}
                 </p>
-                <p className="mt-1 text-xs font-medium text-amber-700">
-                  第 {parseResult.clarificationContext.history.length + 1} / 3 轮追问
+                <p className="mt-1 text-xs font-medium text-ink">
+                  {t("expense.clarificationRound", { round: parseResult.clarificationContext.history.length + 1 })}
                 </p>
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                   <input
                     value={clarificationAnswer}
                     onChange={(event) => setClarificationAnswer(event.target.value)}
-                    placeholder="补充这项信息"
-                    className="min-w-0 flex-1 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none focus:border-amber-500"
+                    placeholder={t("expense.clarificationPlaceholder")}
+                    className="min-w-0 flex-1 rounded-[14px] border border-line bg-surface px-4 py-3 text-sm outline-none focus:border-line"
                   />
                   <button
                     type="button"
@@ -604,14 +614,14 @@ export function ExpenseForm({
                         context: parseResult.clarificationContext!,
                       })
                     }
-                    className="rounded-xl bg-amber-600 px-4 py-3 text-sm font-bold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    className="rounded-full bg-accent px-4 py-3 text-sm font-bold text-surface hover:opacity-85 disabled:cursor-not-allowed disabled:bg-inset"
                   >
-                    提交回答
+                    {t("expense.submitAnswer")}
                   </button>
                 </div>
                 {Array.from(clarificationAnswer).length > MAX_AI_INPUT_LENGTH ? (
-                  <p className="mt-2 text-sm font-semibold text-rose-600" role="alert">
-                    回答不能超过 {MAX_AI_INPUT_LENGTH} 个字符
+                  <p className="mt-2 text-sm font-semibold text-ink" role="alert">
+                    {t("expense.answerLimit", { count: MAX_AI_INPUT_LENGTH })}
                   </p>
                 ) : null}
               </div>
@@ -619,14 +629,14 @@ export function ExpenseForm({
 
             {photoUrls[0] ? (
               <div className="mt-4">
-                <p className="mb-2 text-xs font-bold text-slate-500">已保留的收据原图</p>
+                <p className="mb-2 text-xs font-bold text-ink-soft">{t("expense.receiptRetained")}</p>
                 <Image
                   src={photoUrls[0]}
-                  alt="待保存的收据原图"
+                  alt={t("expense.receiptAlt")}
                   width={720}
                   height={480}
                   unoptimized
-                  className="max-h-56 w-full rounded-2xl border border-slate-200 object-contain"
+                  className="max-h-56 w-full rounded-[14px] border border-line object-contain"
                 />
               </div>
             ) : null}
@@ -635,23 +645,23 @@ export function ExpenseForm({
 
         <form
           onSubmit={handleSubmit}
-          className="min-w-0 space-y-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_16px_50px_rgba(15,23,42,0.06)] sm:p-8"
+          className="min-w-0 space-y-6 rounded-[14px] bg-surface p-5 sm:p-8"
         >
           {parseResult?.confidence === "low" && !parseResult.needsClarification ? (
             <p
-              className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 font-semibold text-amber-900"
+              className="rounded-[14px] bg-inset px-4 py-3 font-semibold text-ink"
               role="alert"
             >
-              识别结果可能不准，请核对
+              {t("expense.lowConfidence")}
             </p>
           ) : null}
 
           {parseResult?.debugError ? (
             <div
-              className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900"
+              className="rounded-[14px] bg-inset px-4 py-3 text-sm text-ink"
               role="status"
             >
-              <p className="font-bold">开发调试信息</p>
+              <p className="font-bold">{t("expense.debugInfo")}</p>
               <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-xs leading-5">
                 {parseResult.debugError}
               </pre>
@@ -659,13 +669,13 @@ export function ExpenseForm({
           ) : null}
 
           {parseResult?.unresolvedNames.length ? (
-            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <h2 className="font-bold text-amber-900">这些名字没有匹配到成员</h2>
+            <section className="rounded-[14px] bg-inset p-4">
+              <h2 className="font-bold text-ink">{t("expense.unresolvedNames")}</h2>
               <div className="mt-3 space-y-3">
                 {parseResult.unresolvedNames.map((name) => (
                   <label
                     key={name}
-                    className="grid gap-2 text-sm font-semibold text-amber-900 sm:grid-cols-[1fr_1.5fr] sm:items-center"
+                    className="grid gap-2 text-sm font-semibold text-ink sm:grid-cols-[1fr_1.5fr] sm:items-center"
                   >
                     <span>{name}</span>
                     <select
@@ -682,12 +692,12 @@ export function ExpenseForm({
                           );
                         }
                       }}
-                      className="rounded-xl border border-amber-200 bg-white px-3 py-2 outline-none focus:border-amber-500"
+                      className="rounded-[14px] border border-line bg-surface px-3 py-2 outline-none focus:border-line"
                     >
-                      <option value="">请选择对应成员</option>
+                      <option value="">{t("expense.chooseMember")}</option>
                       {group.members.map((member) => (
                         <option key={member.id} value={member.id}>
-                          {member.userId === currentUserId ? "你" : member.displayName}
+                          {member.userId === currentUserId ? t("common.you") : member.displayName}
                         </option>
                       ))}
                     </select>
@@ -698,29 +708,29 @@ export function ExpenseForm({
           ) : null}
 
           <div>
-            <label htmlFor="description" className="text-sm font-bold text-slate-700">
-              标题
+            <label htmlFor="description" className="text-sm font-bold text-ink">
+              {t("expense.title")}
             </label>
             <input
               id="description"
               value={description}
               onChange={(event) => setDescription(event.target.value)}
-              placeholder="例如：周末超市采购"
-              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+              placeholder={t("expense.titlePlaceholder")}
+              className="mt-2 w-full rounded-[14px] border border-line px-4 py-3 outline-none focus:border-line focus:ring-2 focus:ring-ink"
             />
             {descriptionLimitError ? (
-              <p className="mt-2 text-sm font-semibold text-rose-600" role="alert">
+              <p className="mt-2 text-sm font-semibold text-ink" role="alert">
                 {descriptionLimitError}
               </p>
             ) : null}
           </div>
 
           <div>
-            <label htmlFor="amount" className="text-sm font-bold text-slate-700">
-              金额（{group.currency}）
+            <label htmlFor="amount" className="text-sm font-bold text-ink">
+              {t("expense.amountCurrency", { currency: group.currency })}
             </label>
-            <div className="mt-2 flex items-center rounded-2xl border border-slate-200 px-4 focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100">
-              <span className="text-xl font-bold text-slate-400">{currencySymbols[group.currency]}</span>
+            <div className="mt-2 flex items-center rounded-[14px] border border-line px-4 focus-within:border-line focus-within:ring-2 focus-within:ring-ink">
+              <span className="text-xl font-bold text-ink-soft">{currencyPrefix(group.currency, locale)}</span>
               <input
                 id="amount"
                 inputMode="decimal"
@@ -730,65 +740,65 @@ export function ExpenseForm({
                   const parsed = parseYuanInput(event.target.value);
                   setAmountInput(parsed.value);
                   setAmountCents(parsed.amountCents);
-                  setAmountNotice(parsed.truncated ? "最多保留两位小数，已自动截断。" : "");
+                  setAmountNotice(parsed.truncated ? t("expense.amountTruncated") : "");
                 }}
                 className="min-w-0 flex-1 bg-transparent px-3 py-4 text-2xl font-bold outline-none"
               />
             </div>
             {amountNotice ? (
-              <p className="mt-2 text-sm font-medium text-amber-700">{amountNotice}</p>
+              <p className="mt-2 text-sm font-medium text-ink">{amountNotice}</p>
             ) : null}
             {amountLimitError ? (
-              <p className="mt-2 text-sm font-semibold text-rose-600" role="alert">
+              <p className="mt-2 text-sm font-semibold text-ink" role="alert">
                 {amountLimitError}
               </p>
             ) : null}
           </div>
 
           <div>
-            <label htmlFor="date" className="text-sm font-bold text-slate-700">
-              日期
+            <label htmlFor="date" className="text-sm font-bold text-ink">
+              {t("expense.date")}
             </label>
             <input
               id="date"
               type="date"
               value={date}
               onChange={(event) => setDate(event.target.value)}
-              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+              className="mt-2 w-full rounded-[14px] border border-line px-4 py-3 outline-none focus:border-line focus:ring-2 focus:ring-ink"
             />
           </div>
 
           <div>
-            <label htmlFor="category" className="text-sm font-bold text-slate-700">
-              分类
+            <label htmlFor="category" className="text-sm font-bold text-ink">
+              {t("expense.category")}
             </label>
             <select
               id="category"
               value={category}
               onChange={(event) => setCategory(event.target.value as ExpenseCategory)}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+              className="mt-2 w-full rounded-[14px] border border-line bg-surface px-4 py-3 outline-none focus:border-line focus:ring-2 focus:ring-ink"
             >
               {expenseCategories.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {t(categoryKey(option))}
                 </option>
               ))}
             </select>
           </div>
 
           <div>
-            <label htmlFor="payer" className="text-sm font-bold text-slate-700">
-              付款人
+            <label htmlFor="payer" className="text-sm font-bold text-ink">
+              {t("expense.payer")}
             </label>
             <select
               id="payer"
               value={paidBy}
               onChange={(event) => setPaidBy(event.target.value)}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+              className="mt-2 w-full rounded-[14px] border border-line bg-surface px-4 py-3 outline-none focus:border-line focus:ring-2 focus:ring-ink"
             >
               {group.members.map((member) => (
                 <option key={member.id} value={member.id}>
-                  {member.userId === currentUserId ? "你" : member.displayName}
+                  {member.userId === currentUserId ? t("common.you") : member.displayName}
                 </option>
               ))}
             </select>
@@ -797,11 +807,11 @@ export function ExpenseForm({
           {itemRows ? (
             <section className="space-y-5" aria-labelledby="receipt-items-heading">
               <div>
-                <h2 id="receipt-items-heading" className="text-sm font-bold text-slate-700">
-                  收据商品与参与人
+                <h2 id="receipt-items-heading" className="text-sm font-bold text-ink">
+                  {t("expense.receiptItems")}
                 </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  每一项都会在勾选的成员之间均分。
+                <p className="mt-1 text-xs text-ink-soft">
+                  {t("expense.receiptItemsDescription")}
                 </p>
               </div>
 
@@ -809,11 +819,11 @@ export function ExpenseForm({
                 {itemRows.map((item, index) => (
                   <article
                     key={item.id}
-                    className="rounded-2xl border border-slate-200 p-4"
+                    className="rounded-[14px] bg-inset p-4"
                   >
                     <div className="grid gap-3 sm:grid-cols-[1fr_9rem]">
-                      <label className="text-xs font-bold text-slate-500">
-                        商品名称
+                      <label className="text-xs font-bold text-ink-soft">
+                        {t("expense.itemName")}
                         <input
                           value={item.name}
                           onChange={(event) =>
@@ -825,14 +835,14 @@ export function ExpenseForm({
                               ) ?? null
                             )
                           }
-                          aria-label={`第 ${index + 1} 项商品名称`}
-                          className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-teal-500"
+                          aria-label={t("expense.itemNameLabel", { index: index + 1 })}
+                          className="mt-1.5 w-full rounded-[14px] border border-line px-3 py-2 text-sm font-semibold text-ink outline-none focus:border-line"
                         />
                       </label>
-                      <label className="text-xs font-bold text-slate-500">
-                        单价（元）
-                        <span className="mt-1.5 flex rounded-xl border border-slate-200 px-3 py-2 text-slate-900 focus-within:border-teal-500">
-                          <span className="text-slate-400">¥</span>
+                      <label className="text-xs font-bold text-ink-soft">
+                        {t("expense.unitPrice", { currency: group.currency })}
+                        <span className="mt-1.5 flex rounded-[14px] border border-line px-3 py-2 text-ink focus-within:border-line">
+                          <span className="text-ink-soft">{currencyPrefix(group.currency, locale)}</span>
                           <input
                             inputMode="decimal"
                             value={item.priceInput}
@@ -846,34 +856,25 @@ export function ExpenseForm({
                                 ) ?? null
                               );
                             }}
-                            aria-label={`${item.name}的单价`}
+                            aria-label={t("expense.itemPriceLabel", { name: item.name })}
                             className="ml-1 min-w-0 flex-1 text-right text-sm font-semibold outline-none"
                           />
                         </span>
                       </label>
                     </div>
                     <fieldset className="mt-3">
-                      <legend className="text-xs font-bold text-slate-500">分摊这项的人</legend>
+                      <legend className="text-xs font-bold text-ink-soft">{t("expense.itemParticipants")}</legend>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {group.members.map((member) => {
                           const checked = item.memberIds.includes(member.id);
                           return (
-                            <label
+                            <Chip
                               key={member.id}
-                              className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-bold ${
-                                checked
-                                  ? "border-teal-300 bg-teal-50 text-teal-800"
-                                  : "border-slate-200 text-slate-500"
-                              }`}
+                              pressed={checked}
+                              onClick={() => toggleItemMember(item.id, member.id)}
                             >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleItemMember(item.id, member.id)}
-                                className="sr-only"
-                              />
-                              {member.userId === currentUserId ? "你" : member.displayName}
-                            </label>
+                              {member.userId === currentUserId ? t("common.you") : member.displayName}
+                            </Chip>
                           );
                         })}
                       </div>
@@ -884,13 +885,13 @@ export function ExpenseForm({
 
               <div className="grid gap-4 sm:grid-cols-2">
                 {([
-                  [`税费（${group.currency}）`, taxInput, setTaxInput],
-                  [`小费（${group.currency}）`, tipInput, setTipInput],
+                  [t("expense.tax", { currency: group.currency }), taxInput, setTaxInput],
+                  [t("expense.tip", { currency: group.currency }), tipInput, setTipInput],
                 ] as const).map(([label, value, setter]) => (
-                  <label key={label} className="text-sm font-bold text-slate-700">
+                  <label key={label} className="text-sm font-bold text-ink">
                     {label}
-                    <span className="mt-2 flex rounded-2xl border border-slate-200 px-4 py-3 focus-within:border-teal-500">
-                      <span className="text-slate-400">{currencySymbols[group.currency]}</span>
+                    <span className="mt-2 flex rounded-[14px] border border-line px-4 py-3 focus-within:border-line">
+                      <span className="text-ink-soft">{currencyPrefix(group.currency, locale)}</span>
                       <input
                         inputMode="decimal"
                         value={value}
@@ -903,15 +904,15 @@ export function ExpenseForm({
               </div>
 
               {itemizedResult ? (
-                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="rounded-[14px] bg-inset px-4 py-3 text-sm text-ink-soft">
                   <p className="font-semibold">
-                    商品、税费与小费合计 {formatCents(itemizedResult.recognizedTotalCents, group.currency)}；
-                    税费和小费已按每人商品小计比例分摊。
+                    {t("expense.itemizedTotal", { amount: formatCents(itemizedResult.recognizedTotalCents, group.currency, locale) })}
                   </p>
                   {recognizedDifferenceCents !== 0 ? (
-                    <p className="mt-2 font-bold text-amber-700" role="status">
-                      与识别总额{recognizedDifferenceCents > 0 ? "还差" : "超出"}{" "}
-                      {formatCents(Math.abs(recognizedDifferenceCents), group.currency)}，请核对；不阻断提交。
+                    <p className="mt-2 font-bold text-ink" role="status">
+                      {t(recognizedDifferenceCents > 0 ? "expense.recognizedShort" : "expense.recognizedOver", {
+                        amount: formatCents(Math.abs(recognizedDifferenceCents), group.currency, locale),
+                      })}
                     </p>
                   ) : null}
                 </div>
@@ -920,27 +921,27 @@ export function ExpenseForm({
           ) : (
             <>
               <fieldset>
-                <legend className="text-sm font-bold text-slate-700">参与人</legend>
+                <legend className="text-sm font-bold text-ink">{t("expense.participants")}</legend>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {group.members.map((member) => {
                     const selected = selectedMemberIds.includes(member.id);
                     return (
                       <label
                         key={member.id}
-                        className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 ${
+                        className={`flex cursor-pointer items-center gap-3 rounded-[14px] border px-4 py-3 ${
                           selected
-                            ? "border-teal-300 bg-teal-50"
-                            : "border-slate-200 bg-white"
+                            ? "border-line bg-inset"
+                            : "border-line bg-surface"
                         }`}
                       >
                         <input
                           type="checkbox"
                           checked={selected}
                           onChange={() => toggleMember(member.id)}
-                          className="h-4 w-4 accent-teal-600"
+                          className="h-4 w-4 accent-ink"
                         />
                         <span className="font-semibold">
-                          {member.userId === currentUserId ? "你" : member.displayName}
+                          {member.userId === currentUserId ? t("common.you") : member.displayName}
                         </span>
                       </label>
                     );
@@ -949,35 +950,30 @@ export function ExpenseForm({
               </fieldset>
 
               <fieldset>
-                <legend className="text-sm font-bold text-slate-700">分摊方式</legend>
-                <div className="mt-3 grid grid-cols-3 rounded-2xl bg-slate-100 p-1">
+                <legend className="text-sm font-bold text-ink">{t("expense.splitMethod")}</legend>
+                <div className="mt-3 flex flex-wrap gap-2">
                   {(
                     [
-                      ["equal", "均分"],
-                      ["percentage", "按比例"],
-                      ["amount", "按金额"],
+                      ["equal", t("expense.splitEqual")],
+                      ["percentage", t("expense.splitPercentage")],
+                      ["amount", t("expense.splitAmount")],
                     ] as const
                   ).map(([value, label]) => (
-                    <button
+                    <Chip
                       key={value}
-                      type="button"
+                      pressed={method === value}
                       onClick={() => changeMethod(value)}
-                      className={`rounded-xl px-3 py-2.5 text-sm font-bold transition-colors ${
-                        method === value
-                          ? "bg-white text-teal-700 shadow-sm"
-                          : "text-slate-500"
-                      }`}
                     >
                       {label}
-                    </button>
+                    </Chip>
                   ))}
                 </div>
               </fieldset>
 
-              <div className="overflow-hidden rounded-2xl border border-slate-200">
+              <div className="overflow-hidden rounded-[14px] bg-inset">
                 {selectedMembers.length === 0 ? (
-                  <p className="px-4 py-5 text-center text-sm font-semibold text-rose-600">
-                    请至少选择一名参与人
+                  <p className="px-4 py-5 text-center text-sm font-semibold text-ink">
+                    {t("expense.selectParticipant")}
                   </p>
                 ) : (
                   selectedMembers.map((member) => {
@@ -991,19 +987,19 @@ export function ExpenseForm({
                     return (
                       <div
                         key={member.id}
-                        className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0 sm:gap-4 sm:px-4"
+                        className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-line px-3 py-3 last:border-b-0 sm:gap-4 sm:px-4"
                       >
                         <span className="font-semibold">
-                          {member.userId === currentUserId ? "你" : member.displayName}
+                          {member.userId === currentUserId ? t("common.you") : member.displayName}
                         </span>
                         {method === "equal" ? (
-                          <span className="font-bold">{formatCents(previewCents, group.currency)}</span>
+                          <span className="amount text-lg font-medium">{formatCents(previewCents, group.currency, locale)}</span>
                         ) : method === "percentage" ? (
                           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-                            <label className="flex items-center rounded-xl border border-slate-200 px-3 py-2">
+                            <label className="flex items-center rounded-[14px] border border-line px-3 py-2">
                               <input
                                 inputMode="decimal"
-                                aria-label={`${member.userId === currentUserId ? "你" : member.displayName}的百分比`}
+                                aria-label={t("expense.memberPercentage", { name: member.userId === currentUserId ? t("common.you") : member.displayName })}
                                 value={percentageInputs[member.id] ?? ""}
                                 onChange={(event) =>
                                   setPercentageInputs((current) => ({
@@ -1013,18 +1009,18 @@ export function ExpenseForm({
                                 }
                                 className="w-12 bg-transparent text-right font-semibold outline-none sm:w-16"
                               />
-                              <span className="ml-1 text-slate-400">%</span>
+                              <span className="ml-1 text-ink-soft">%</span>
                             </label>
-                            <span className="w-18 text-right text-sm font-semibold text-slate-500 sm:w-20">
-                              {formatCents(previewCents, group.currency)}
+                            <span className="amount w-18 text-right text-base font-medium text-ink sm:w-20">
+                              {formatCents(previewCents, group.currency, locale)}
                             </span>
                           </div>
                         ) : (
-                          <label className="flex items-center rounded-xl border border-slate-200 px-3 py-2">
-                            <span className="text-slate-400">{currencySymbols[group.currency]}</span>
+                          <label className="flex items-center rounded-[14px] border border-line px-3 py-2">
+                            <span className="text-ink-soft">{currencyPrefix(group.currency, locale)}</span>
                             <input
                               inputMode="decimal"
-                              aria-label={`${member.userId === currentUserId ? "你" : member.displayName}承担的金额`}
+                              aria-label={t("expense.memberAmount", { name: member.userId === currentUserId ? t("common.you") : member.displayName })}
                               value={amountInputs[member.id] ?? ""}
                               onChange={(event) => {
                                 const parsed = parseYuanInput(event.target.value);
@@ -1033,7 +1029,7 @@ export function ExpenseForm({
                                   [member.id]: parsed.value,
                                 }));
                               }}
-                              className="ml-1 w-20 bg-transparent text-right font-semibold outline-none sm:w-24"
+                              className="amount ml-1 w-20 bg-transparent text-right text-lg font-medium outline-none sm:w-24"
                             />
                           </label>
                         )}
@@ -1044,37 +1040,42 @@ export function ExpenseForm({
               </div>
 
               {method === "percentage" ? (
-                <p className="text-sm font-semibold text-slate-600">
-                  已分配 {formatPercentage(percentageTotal)}% /{" "}
-                  {percentageDifference >= 0 ? "还差" : "超出"}{" "}
-                  {formatPercentage(Math.abs(percentageDifference))}%
+                <p className="text-sm font-semibold text-ink-soft">
+                  {t("expense.percentageProgress", {
+                    assigned: formatPercentage(percentageTotal),
+                    status: t(percentageDifference >= 0 ? "expense.short" : "expense.over"),
+                    difference: formatPercentage(Math.abs(percentageDifference)),
+                  })}
                 </p>
               ) : method === "amount" ? (
-                <p className="text-sm font-semibold text-slate-600">
-                  已分配 {formatCents(assignedAmountCents, group.currency)} / 总额{" "}
-                  {formatCents(amountCents, group.currency)} /{" "}
-                  {amountDifferenceCents >= 0 ? "还差" : "超出"}{" "}
-                  {formatCents(Math.abs(amountDifferenceCents), group.currency)}
+                <p className="text-sm font-semibold text-ink-soft">
+                  {t("expense.amountProgress", {
+                    assigned: formatCents(assignedAmountCents, group.currency, locale),
+                    total: formatCents(amountCents, group.currency, locale),
+                    status: t(amountDifferenceCents >= 0 ? "expense.short" : "expense.over"),
+                    difference: formatCents(Math.abs(amountDifferenceCents), group.currency, locale),
+                  })}
                 </p>
               ) : null}
             </>
           )}
 
-          <div className="border-t border-slate-100 pt-5">
+          <div className="border-t border-line pt-5">
             {allocationError ? (
-              <p className="mb-3 font-semibold text-rose-600">份额不匹配：{allocationError}</p>
+              <p className="mb-3 font-semibold text-ink">{t("expense.shareMismatch", { error: allocationError })}</p>
             ) : null}
             {submitError ? (
-              <p className="mb-3 font-semibold text-rose-600" role="alert">
+              <p className="mb-3 font-semibold text-ink" role="alert">
                 {submitError}
               </p>
             ) : null}
             <button
               type="submit"
               disabled={!canSubmit}
-              className="w-full rounded-2xl bg-teal-600 px-5 py-3.5 font-bold text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-accent px-5 py-3.5 font-bold text-surface transition-colors hover:opacity-85 disabled:cursor-not-allowed disabled:bg-inset"
             >
-              {isSubmitting ? "保存中…" : initialValue ? "保存修改" : "创建账单"}
+              {!initialValue ? <Plus aria-hidden="true" size={18} strokeWidth={2} /> : null}
+              {t(isSubmitting ? "common.saving" : initialValue ? "expense.saveChanges" : "expense.create")}
             </button>
           </div>
         </form>

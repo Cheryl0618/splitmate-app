@@ -26,7 +26,7 @@ export type RelationshipPageData =
       targetMemberId: string;
       targetMemberName: string;
       overview: {
-        relationshipDuration: string;
+        firstSharedExpenseAt: string;
         totalSharedCents: number;
         sharedExpenseCount: number;
       };
@@ -42,7 +42,7 @@ export type RelationshipPageData =
       };
       topCategories: Array<{ category: string; cents: number; count: number }>;
       settlementHabits: {
-        avgSettleDaysLabel: string;
+        avgSettleDays: number;
         settledExpenseCount: number;
         aPaidCount: number;
         bPaidCount: number;
@@ -75,20 +75,6 @@ interface SettlementRow {
   fromMemberId: string;
   toMemberId: string;
   confirmedAt: number | string;
-}
-
-function relationshipDuration(firstExpenseAt: Date) {
-  const now = new Date();
-  const months = Math.max(
-    1,
-    (now.getUTCFullYear() - firstExpenseAt.getUTCFullYear()) * 12 +
-      now.getUTCMonth() -
-      firstExpenseAt.getUTCMonth()
-  );
-  if (months < 12) return `${months} 个月`;
-  const years = Math.floor(months / 12);
-  const remainingMonths = months % 12;
-  return remainingMonths > 0 ? `${years} 年 ${remainingMonths} 个月` : `${years} 年`;
 }
 
 function percentage(value: number) {
@@ -208,7 +194,7 @@ export function getRelationshipPageData(
       state: "ready",
       ...base,
       overview: {
-        relationshipDuration: relationshipDuration(stats.firstSharedExpenseAt),
+        firstSharedExpenseAt: stats.firstSharedExpenseAt.toISOString(),
         totalSharedCents: stats.totalSharedCents,
         sharedExpenseCount: stats.sharedExpenseCount,
       },
@@ -228,10 +214,7 @@ export function getRelationshipPageData(
         count,
       })),
       settlementHabits: {
-        avgSettleDaysLabel:
-          stats.settledExpenseCount > 0
-            ? `${stats.avgSettleDays.toFixed(1)} 天`
-            : "尚无记录",
+        avgSettleDays: stats.avgSettleDays,
         settledExpenseCount: stats.settledExpenseCount,
         aPaidCount: stats.aPaidCount,
         bPaidCount: stats.bPaidCount,
